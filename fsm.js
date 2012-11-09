@@ -127,12 +127,12 @@ Link.prototype.draw = function(c) {
     var textAngle = (startAngle + endAngle) / 2 + stuff.isReversed * Math.PI;
     var textX = stuff.circleX + stuff.circleRadius * Math.cos(textAngle);
     var textY = stuff.circleY + stuff.circleRadius * Math.sin(textAngle);
-    drawText(c, this.text, textX, textY, textAngle, selectedObject == this, arcFont);
+    drawText(c, this.text, textX, textY, textAngle, selectedObject == this, linkFont);
   } else {
     var textX = (stuff.startX + stuff.endX) / 2;
     var textY = (stuff.startY + stuff.endY) / 2;
     var textAngle = Math.atan2(stuff.endX - stuff.startX, stuff.startY - stuff.endY);
-    drawText(c, this.text, textX, textY, textAngle + this.lineAngleAdjust, selectedObject == this, arcFont);
+    drawText(c, this.text, textX, textY, textAngle + this.lineAngleAdjust, selectedObject == this, linkFont);
   }
 };
 
@@ -179,6 +179,7 @@ function Node(x, y) {
   this.mouseOffsetY = 0;
   this.isAcceptState = false;
   this.text = '';
+  this.outputs = '';
 }
 
 Node.prototype.setMouseStart = function(x, y) {
@@ -195,10 +196,19 @@ Node.prototype.draw = function(c) {
   // draw the circle
   c.beginPath();
   c.arc(this.x, this.y, nodeRadius, 0, 2 * Math.PI, false);
+  c.fillStyle=nodeBgColor;
+  c.fill();
+  c.strokeStyle= (selectedObject === this && !inOutputMode) ? nodeSelectedColor : nodeFgColor;
   c.stroke();
 
-  // draw the text
-  drawText(c, this.text, this.x, this.y, null, selectedObject == this, nodeFont);
+  // draw the state name
+  c.fillStyle= (selectedObject === this && !inOutputMode) ? nodeSelectedColor : nodeFgColor;
+  drawText(c, this.text, this.x, this.y, null, selectedObject == this && !inOutputMode, nodeFont);
+
+  //draw the state's moore outputs
+  c.fillStyle= (selectedObject === this && inOutputMode) ? nodeSelectedColor : nodeOutputColor;
+  drawText(c, this.outputs, this.x, this.y + nodeRadius + nodeOutputPadding, null, selectedObject == this && inOutputMode, nodeOutputFont);
+  c.fillStyle= (selectedObject === this) ? nodeSelectedColor : nodeFgColor;
 
   // draw a double circle for an accept state
   if (this.isAcceptState) {
@@ -206,6 +216,7 @@ Node.prototype.draw = function(c) {
     c.arc(this.x, this.y, nodeRadius - 6, 0, 2 * Math.PI, false);
     c.stroke();
   }
+
 };
 
 Node.prototype.closestPointOnCircle = function(x, y) {
@@ -280,7 +291,7 @@ SelfLink.prototype.draw = function(c) {
   // draw the text on the loop farthest from the node
   var textX = stuff.circleX + stuff.circleRadius * Math.cos(this.anchorAngle);
   var textY = stuff.circleY + stuff.circleRadius * Math.sin(this.anchorAngle);
-  drawText(c, this.text, textX, textY, this.anchorAngle, selectedObject == this, arcFont);
+  drawText(c, this.text, textX, textY, this.anchorAngle, selectedObject == this, linkFont);
   // draw the head of the arrow
   drawArrow(c, stuff.endX, stuff.endY, stuff.endAngle + Math.PI * 0.4);
 };
@@ -340,7 +351,7 @@ StartLink.prototype.draw = function(c) {
 
   // draw the text at the end without the arrow
   var textAngle = Math.atan2(stuff.startY - stuff.endY, stuff.startX - stuff.endX);
-  drawText(c, this.text, stuff.startX, stuff.startY, textAngle, selectedObject == this, arcFont);
+  drawText(c, this.text, stuff.startX, stuff.startY, textAngle, selectedObject == this, linkFont);
 
   // draw the head of the arrow
   drawArrow(c, stuff.endX, stuff.endY, Math.atan2(-this.deltaY, -this.deltaX));
@@ -670,11 +681,20 @@ function resetCaret() {
 var canvas;
 var nodeRadius = 55;
 var nodeOutline = 2;
-var nodes = [];
-var links = [];
-
+var nodeFgColor = "black";
+var nodeBgColor = "white";
+var nodeSelectedColor = "blue";
 var nodeFont = '16px "Arial", sans-serif'
-var arcFont = '16px "Courier New", monospace'
+var nodeOutputPadding = 14; //pixels
+var nodeOutputFont = '20px "Courier New", monospace'
+var nodeOutputColor = "#101010";
+var nodes = [];
+
+var linkFont = '16px "Courier New", monospace'
+var linkFgColor = "black";
+var linkBgColor = "white";
+var linkSelectedColor = "blue";
+var links = [];
 
 var cursorVisible = true;
 var snapToPadding = 20; // pixels
@@ -683,6 +703,7 @@ var selectedObject = null; // either a Link or a Node
 var currentLink = null; // a Link
 var movingObject = false;
 var originalClick;
+var inOutputMode = false; //determines if we're in edit-output mode
 
 function drawUsing(c) {
   c.clearRect(0, 0, canvas.width, canvas.height);
@@ -691,17 +712,17 @@ function drawUsing(c) {
 
   for (var i = 0; i < nodes.length; i++) {
     c.lineWidth = nodeOutline;
-    c.fillStyle = c.strokeStyle = (nodes[i] == selectedObject) ? 'blue' : 'black';
+    c.fillStyle = c.strokeStyle = (nodes[i] == selectedObject) ?  nodeSelectedColor : nodeFgColor;
     nodes[i].draw(c);
   }
   for (var i = 0; i < links.length; i++) {
     c.lineWidth = nodeOutline;
-    c.fillStyle = c.strokeStyle = (links[i] == selectedObject) ? 'blue' : 'black';
+    c.fillStyle = c.strokeStyle = (links[i] == selectedObject) ?  linkSelectedColor : linkFgColor;
     links[i].draw(c);
   }
   if (currentLink != null) {
     c.lineWidth = nodeOutline;
-    c.fillStyle = c.strokeStyle = 'black';
+    c.fillStyle = c.strokeStyle = linkFgColor;
     currentLink.draw(c);
   }
 
@@ -753,6 +774,7 @@ window.onload = function() {
     var mouse = crossBrowserRelativeMousePos(e);
     selectedObject = selectObject(mouse.x, mouse.y);
     movingObject = false;
+    inOutputMode = false;
     originalClick = mouse;
 
     if (selectedObject != null) {
@@ -785,6 +807,7 @@ window.onload = function() {
   canvas.ondblclick = function(e) {
     var mouse = crossBrowserRelativeMousePos(e);
     selectedObject = selectObject(mouse.x, mouse.y);
+    inOutputMode = false;
 
     if (selectedObject == null) {
       selectedObject = new Node(mouse.x, mouse.y);
@@ -792,12 +815,15 @@ window.onload = function() {
       resetCaret();
       draw();
     } 
-    /*
     else if (selectedObject instanceof Node) {
+
+      inOutputMode = true;
+      draw();
+        /*
       selectedObject.isAcceptState = !selectedObject.isAcceptState;
       draw();
+      */
     }
-    */
   };
 
   canvas.onmousemove = function(e) {
@@ -862,11 +888,15 @@ document.onkeydown = function(e) {
     // don't read keystrokes when other things have focus
     return true;
   } else if (selectedObject != null) {
-    if (key == 8 && selectedObject.text) { // backspace key
-      selectedObject.text = selectedObject.text.substr(0, selectedObject.text.length - 1);
+    if (key == 8) { // backspace key
+      if(inOutputMode && selectedObject.outputs) {
+          selectedObject.outputs = selectedObject.outputs.substr(0, selectedObject.outputs.length - 1);
+      } else if(selectedObject.text) {
+          selectedObject.text = selectedObject.text.substr(0, selectedObject.text.length - 1);
+      }
       resetCaret();
       draw();
-    } else if (key == 8 || key == 46) { // delete key
+    } else if (key == 46) { // delete key
       for (var i = 0; i < nodes.length; i++) {
         if (nodes[i] == selectedObject) {
           nodes.splice(i--, 1);
@@ -901,7 +931,12 @@ document.onkeypress = function(e) {
     // don't read keystrokes when other things have focus
     return true;
   } else if (key >= 0x20 && key <= 0x7E && !e.metaKey && !e.altKey && !e.ctrlKey && selectedObject != null && 'text' in selectedObject) {
-    selectedObject.text += String.fromCharCode(key);
+
+    if(inOutputMode) {
+        selectedObject.outputs += String.fromCharCode(key);
+    } else {
+        selectedObject.text += String.fromCharCode(key);
+    }
     resetCaret();
     draw();
 
@@ -1016,6 +1051,7 @@ function restoreBackup() {
       var node = new Node(backupNode.x, backupNode.y);
       node.isAcceptState = backupNode.isAcceptState;
       node.text = backupNode.text;
+      node.outputs = backupNode.outputs;
       nodes.push(node);
     }
     for (var i = 0; i < backup.links.length; i++) {
@@ -1061,6 +1097,7 @@ function saveBackup() {
       'x': node.x,
       'y': node.y,
       'text': node.text,
+      'outputs': node.outputs,
       'isAcceptState': node.isAcceptState
     };
     backup.nodes.push(backupNode);
