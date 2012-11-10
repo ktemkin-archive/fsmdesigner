@@ -59,8 +59,554 @@ if (typeof btoa == 'undefined') {
     }
 }
 
+function FSMDesigner(canvas) {
 
-function Link(a, b) {
+  /**
+   * General Config
+   */
+  this.snapToPadding = 20; // pixels
+  this.hitTargetPadding = 20; // pixels
+  this.undo_history_size = 32;
+  
+  this.canvas = canvas;
+  this.originalClick = null;
+  this.cursorVisible = true;
+  this.selectedObject = null; // either a Link or a Node
+  this.currentLink = null; // a Link
+  this.movingObject = false;
+  this.inOutputMode = false; //determines if we're in edit-output mode
+
+  this.nodes = [];
+  this.links = [];
+  this.undo_stack = [];
+  this.redo_stack = [];
+
+  //Stores whether the FSM is in "node creation" mode.
+  this.modalBehavior = FSMDesigner.ModalBehaviors.POINTER;
+  
+  //Register the events associated with the given FSM designer.
+  var activeFSM = this;
+  this.canvas.onmousedown = function(e) { activeFSM.handlemousedown(e); };
+  this.canvas.ondblclick = function(e) { activeFSM.handledoubleclick(e); };
+  this.canvas.onmousemove = function(e) { activeFSM.handlemousemove(e); };
+  this.canvas.onmouseup = function(e) { activeFSM.handlemouseup(e); };
+
+  //FIXME: replace these with addEventListener
+  document.onkeypress = function(e) { activeFSM.handlekeypress(e) };
+  document.onkeydown = function(e) { activeFSM.handlekeydown(e) };
+  document.onkeyup = function(e) { activeFSM.handlekeyup(e) };
+}
+
+FSMDesigner.ModalBehaviors = {
+  POINTER: 'pointer',
+  CREATE: 'create'
+};
+
+FSMDesigner.prototype.saveUndoStep = function() {
+  //If we're about to exceed the undo history size, 
+  //get rid of the least recent undo.
+  if(this.undo_stack.count >= this.undo_history_size) {
+      this.undo_stack.shift();
+  }
+
+  //Push a backup onto the undo stack.
+  this.undo_stack.push(this.createBackup());
+}
+
+FSMDesigner.prototype.saveRedoStep = function() {
+  //If we're about to exceed the undo history size, 
+  //get rid of the least recent undo.
+  if(this.redo_stack.count >= this.redo_history_size) {
+      this.redo_stack.shift();
+  }
+
+  //Push a backup onto the undo stack.
+  this.redo_stack.push(this.createBackup());
+}
+
+
+FSMDesigner.prototype.undo = function() {
+
+  //Push the current state onto the Redo stack...
+  this.saveRedoStep();
+
+  //Undo the last change...
+  this.restoreBackup(this.undo_stack.pop());
+
+  //And redraw.
+  this.draw();
+}
+
+FSMDesigner.prototype.redo = function() {
+
+  //Push the current state onto the undo stack...
+  this.saveUndoStep();
+
+  //Redo the last change...
+  this.restoreBackup(this.redo_stack.pop());
+
+  //And redraw.
+  this.draw();
+}
+
+FSMDesigner.prototype.clear = function(noSave) 
+{
+  //Unless we've been instructed not to save, save an undo step.
+  if(!noSave) {
+    this.saveUndoStep();
+  }
+
+  this.nodes = []
+  this.links = []
+  this.selectedObject = null;
+  this.currentTarget = null;
+  this.draw();
+}
+
+
+/**
+ *  Attempt to find the object which owns the given position.
+ */
+FSMDesigner.prototype.selectObject = function(x, y) {
+
+  //Check each of the nodes for the given point.
+  for (var i = 0; i < this.nodes.length; i++) {
+    if (this.nodes[i].containsPoint(x, y)) {
+      return this.nodes[i];
+    }
+  }
+
+  //Check each of the transition arcs for a given point.
+  for (var i = 0; i < this.links.length; i++) {
+    if (this.links[i].containsPoint(x, y)) {
+      return this.links[i];
+    }
+  }
+
+  //If we didn't find anything, return null.
+  return null;
+}
+
+
+FSMDesigner.prototype.handlekeydown = function (e) {
+  var key = crossBrowserKey(e);
+
+  if (key == 16) {
+    this.modalBehavior = FSMDesigner.ModalBehaviors.CREATE;
+  } else if (!this.hasFocus()) {
+    // don't read keystrokes when other things have focus
+    return true;
+  } else if (this.selectedObject != null) {
+    if (key == 8) { // backspace key
+      //FIXME modalbehavior
+      if(this.inOutputMode && this.selectedObject.outputs) {
+          this.selectedObject.outputs = this.selectedObject.outputs.substr(0, this.selectedObject.outputs.length - 1);
+      } else if(this.selectedObject.text) {
+          this.selectedObject.text = this.selectedObject.text.substr(0, this.selectedObject.text.length - 1);
+      }
+      resetCaret();
+      this.draw();
+    } else if (key == 46) { // delete key
+      for (var i = 0; i < this.nodes.length; i++) {
+        if (this.nodes[i] == this.selectedObject) {
+          this.nodes.splice(i--, 1);
+        }
+      }
+      for (var i = 0; i < this.links.length; i++) {
+        if (this.links[i] == this.selectedObject 
+              || this.links[i].node == this.selectedObject 
+              || this.links[i].nodeA == this.selectedObject 
+              || this.links[i].nodeB == this.selectedObject) {
+          this.links.splice(i--, 1);
+        }
+      }
+      this.selectedObject = null;
+      this.draw();
+    }
+  }
+
+  // backspace is a shortcut for the back button, but do NOT want to change pages
+  // FIXME?
+  if (key == 8) return false;
+};
+
+FSMDesigner.prototype.handlekeyup = function(e) {
+  var key = crossBrowserKey(e);
+
+  if (key == 16) {
+    this.modalBehavior = FSMDesigner.ModalBehaviors.POINTER;
+  }
+};
+
+FSMDesigner.prototype.handlekeypress = function(e) {
+
+  // don't read keystrokes when other things have focus
+  var key = crossBrowserKey(e);
+  if (!this.hasFocus()) {
+    // don't read keystrokes when other things have focus
+    return true;
+  } else if (key >= 0x20 && key <= 0x7E && !e.metaKey && !e.altKey && !e.ctrlKey && this.selectedObject != null && 'text' in this.selectedObject) {
+
+    //FIXME modalbehavior
+    if(this.inOutputMode) {
+        this.selectedObject.outputs += String.fromCharCode(key);
+    } else {
+        this.selectedObject.text += String.fromCharCode(key);
+    }
+    resetCaret();
+    this.draw();
+
+    // don't let keys do their actions (like space scrolls down the page)
+    return false;
+  } else if (key == 8) {
+    // backspace is a shortcut for the back button, but do NOT want to change pages
+    // TODO: move elsewhere?
+    return false;
+  }
+};
+
+/** 
+ * Draws the active FSMDesginer using the current context.
+ */ 
+FSMDesigner.prototype.drawUsing = function (c) {
+  c.clearRect(0, 0, this.canvas.width, this.canvas.height);
+  c.save();
+  c.translate(0.5, 0.5);
+
+  //Draw each of the nodes in the current FSMDesigner.
+  for (var i = 0; i < this.nodes.length; i++) {
+    this.nodes[i].draw(c);
+  }
+
+  //Draw each of the links in the FSM Designer.
+  for (var i = 0; i < this.links.length; i++) {
+    this.links[i].draw(c);
+  }
+
+  //If we have a link-in-progress, draw it.
+  if (this.currentLink != null) {
+    this.currentLink.draw(c);
+  }
+
+  c.restore();
+}
+
+
+FSMDesigner.prototype.draw = function () {
+  var context = this.canvas.getContext('2d');
+
+  //TODO extract me to somewhere else
+  context.canvas.width = window.innerWidth;
+  context.canvas.height = window.innerHeight - document.getElementById("toolbar").offsetHeight;;
+
+  //Perform the core modification...
+  this.drawUsing(context);
+
+  // And autosave.
+  this.saveBackup();
+}
+
+FSMDesigner.prototype.saveBackup = function () {
+  if (!localStorage || !JSON) {
+    return;
+  }
+
+  localStorage['fsm'] = JSON.stringify(this.createBackup());
+}
+
+
+FSMDesigner.prototype.createBackup = function () {
+  var backup = {
+    'nodes': [],
+    'links': []
+  };
+
+  //Back up each node in the current FSM.
+  for (var i = 0; i < this.nodes.length; i++) {
+    
+    var node = this.nodes[i];
+    var backupNode = {
+      'x': node.x,
+      'y': node.y,
+      'text': node.text,
+      'outputs': node.outputs,
+      'isAcceptState': node.isAcceptState,
+      'radius': node.radius
+    };
+
+    backup.nodes.push(backupNode);
+  }
+
+  //Back up each link in the current FSM.
+  for (var i = 0; i < this.links.length; i++) {
+    var link = this.links[i];
+    var backupLink = null;
+    if (link instanceof SelfLink) {
+      backupLink = {
+        'type': 'SelfLink',
+        'node': this.nodes.indexOf(link.node),
+        'text': link.text,
+        'anchorAngle': link.anchorAngle
+      };
+    } else if (link instanceof StartLink) {
+      backupLink = {
+        'type': 'StartLink',
+        'node': this.nodes.indexOf(link.node),
+        'text': link.text,
+        'deltaX': link.deltaX,
+        'deltaY': link.deltaY
+      };
+    } else if (link instanceof Link) {
+      backupLink = {
+        'type': 'Link',
+        'nodeA': this.nodes.indexOf(link.nodeA),
+        'nodeB': this.nodes.indexOf(link.nodeB),
+        'text': link.text,
+        'lineAngleAdjust': link.lineAngleAdjust,
+        'parallelPart': link.parallelPart,
+        'perpendicularPart': link.perpendicularPart
+      };
+    }
+    if (backupLink != null) {
+      backup.links.push(backupLink);
+    }
+  }
+  return backup;
+}
+
+FSMDesigner.prototype.restoreBackup = function (backup) {
+
+  console.log('Recreating state...');
+  console.log(backup);
+
+  //If no backup was provided, try to restore the "local storage" copy.
+  if(backup == null) {
+    try {
+
+        //If this browser doesn't suppor the localStorage or JSON extensions, abort.
+        if (!localStorage || !JSON) {
+            return false;
+        }
+
+        //Otherwise, load the value of the existing backup.
+        backup = JSON.parse(localStorage['fsm']);
+
+    } catch(e) {
+      localStorage['fsm'] = '';
+    }
+  }
+
+  if(!backup) {
+    return;
+  }
+
+  //Clear the existing canvas.
+  this.clear(true);
+ 
+  //Restore each of the nodes.
+  for (var i = 0; i < backup.nodes.length; i++) {
+    var backupNode = backup.nodes[i];
+    var node = new Node(backupNode.x, backupNode.y, this);
+    node.isAcceptState = backupNode.isAcceptState;
+    node.text = backupNode.text;
+    node.outputs = backupNode.outputs;
+    node.radius = backupNode.radius;
+    this.nodes.push(node);
+  }
+
+  //Restore each of the links.
+  for (var i = 0; i < backup.links.length; i++) {
+    var backupLink = backup.links[i];
+    var link = null;
+    if (backupLink.type == 'SelfLink') {
+      link = new SelfLink(this.nodes[backupLink.node], null, this);
+      link.anchorAngle = backupLink.anchorAngle;
+      link.text = backupLink.text;
+    } else if (backupLink.type == 'StartLink') {
+      link = new StartLink(this.nodes[backupLink.node], null, this);
+      link.deltaX = backupLink.deltaAboutX;
+      link.deltaY = backupLink.deltaY;
+      link.text = backupLink.text;
+    } else if (backupLink.type == 'Link') {
+      link = new Link(this.nodes[backupLink.nodeA], this.nodes[backupLink.nodeB], this);
+      link.parallelPart = backupLink.parallelPart;
+      link.perpendicularPart = backupLink.perpendicularPart;
+      link.text = backupLink.text;
+      link.lineAngleAdjust = backupLink.lineAngleAdjust;
+    }
+    if (link != null) {
+      this.links.push(link);
+    }
+  }
+}
+
+//FIXME remove
+function canvasHasFocus() {
+  return (document.activeElement || document.body) == document.body;
+}
+
+FSMDesigner.prototype.hasFocus = function () {
+  //TODO: generalize?
+  return (document.activeElement || document.body) == document.body;
+}
+
+/**
+ * Handle mouse-up events.
+ */
+FSMDesigner.prototype.handlemouseup = function(e) {
+    this.movingObject = false;
+
+    if (this.currentLink != null) {
+      if (!(this.currentLink instanceof TemporaryLink)) {
+        this.selectedObject = this.currentLink;
+        this.links.push(this.currentLink);
+        resetCaret();
+      }
+      this.currentLink = null;
+      this.draw();
+    }
+  };
+
+FSMDesigner.prototype.handlemousemove = function(e) {
+    var mouse = crossBrowserRelativeMousePos(e);
+
+    if (this.currentLink != null) {
+      var targetNode = this.selectObject(mouse.x, mouse.y);
+      if (!(targetNode instanceof Node)) {
+        targetNode = null;
+      }
+
+      if (this.selectedObject == null) {
+        if (targetNode != null) {
+          this.currentLink = new StartLink(this.targetNode, this.originalClick, this);
+        } else {
+          this.currentLink = new TemporaryLink(this.originalClick, mouse);
+        }
+      } else {
+        if (targetNode == this.selectedObject) {
+          this.currentLink = new SelfLink(this.selectedObject, mouse, this);
+        } else if (targetNode != null) {
+          this.currentLink = new Link(this.selectedObject, targetNode, this);
+        } else {
+          this.currentLink = new TemporaryLink(this.selectedObject.closestPointOnCircle(mouse.x, mouse.y), mouse);
+        }
+      }
+      this.draw();
+    }
+
+    if (this.movingObject) {
+      this.selectedObject.setAnchorPoint(mouse.x, mouse.y);
+      if (this.selectedObject instanceof Node) {
+        this.handleSnap();
+      }
+      this.draw();
+    }
+  };
+
+/**
+ * If appropriate, snap the given node into alignment with another node.
+ */
+FSMDesigner.prototype.handleSnap = function() {
+
+  node = this.selectedObject;
+
+  for (var i = 0; i < this.nodes.length; i++) {
+    if (this.nodes[i] == node) continue;
+
+    if (Math.abs(node.x - this.nodes[i].x) < this.snapToPadding) {
+      node.x = this.nodes[i].x;
+    }
+
+    if (Math.abs(node.y - this.nodes[i].y) < this.snapToPadding) {
+      node.y = this.nodes[i].y;
+    }
+  }
+}
+
+
+/**
+ * Double-click handler for the FSM Designer.
+ */
+FSMDesigner.prototype.handledoubleclick = function(e) {
+  var mouse = crossBrowserRelativeMousePos(e);
+  this.selectedObject = this.selectObject(mouse.x, mouse.y);
+  this.inOutputMode = false; //FIXME
+  if (this.selectedObject == null) {
+    this.selectedObject = new Node(mouse.x, mouse.y, this);
+    this.nodes.push(this.selectedObject);
+    resetCaret();
+    this.draw();
+  } 
+  else if (this.selectedObject instanceof Node) {
+    this.inOutputMode = true; //FIXME
+    this.draw();
+  }
+
+  //Prevent text selection after double clicks, which plague chrome.
+  if(document.selection && document.selection.empty) {
+        document.selection.empty();
+  } else if(window.getSelection) {
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+  }
+};
+
+/**
+ * Handle mouse-down events for the FSMDesigner. 
+ */
+FSMDesigner.prototype.handlemousedown = function(e) {
+    var mouse = crossBrowserRelativeMousePos(e);
+
+    this.selectedObject = this.selectObject(mouse.x, mouse.y);
+
+    this.movingObject = false;
+    this.inOutputMode = false;
+    this.originalClick = mouse;
+
+    if (this.selectedObject != null) {
+      if (this.modalBehavior == FSMDesigner.ModalBehaviors.CREATE && this.selectedObject instanceof Node) {
+        this.currentLink = new SelfLink(this.selectedObject, mouse, this);
+      } else {
+        this.movingObject = true;
+        this.deltaMouseX = this.deltaMouseY = 0;
+        if (this.selectedObject.setMouseStart) {
+          this.selectedObject.setMouseStart(mouse.x, mouse.y);
+        }
+      }
+      resetCaret();
+    } else if (this.modalBehavior == FSMDesigner.ModalBehaviors.CREATE) {
+      this.currentLink = new TemporaryLink(mouse, mouse);
+    }
+
+    this.draw();
+
+    if (this.hasFocus()) {
+      // disable drag-and-drop only if the canvas is already focused
+      return false;
+    } else {
+      // otherwise, let the browser switch the focus away from wherever it was
+      resetCaret();
+      return true;
+    }
+  };
+
+
+/*
+FSMDesigner.prototype.font_fallback = function() {
+    this.nodeOutputFont = '18px, monospace';
+    this.nodeFont = '20px, sans-serif';
+    this.linkFont = '20px, monospace';
+    this.draw();
+}
+*/
+
+
+function Link(a, b, designer) {
+
+  //apply link defaults to this object
+  Link.setDefaults(this);
+
+  this.parent = designer;
   this.nodeA = a;
   this.nodeB = b;
   this.text = '';
@@ -69,6 +615,16 @@ function Link(a, b) {
   // make anchor point relative to the locations of nodeA and nodeB
   this.parallelPart = 0.5; // percentage from nodeA to nodeB
   this.perpendicularPart = 0; // pixels from line between nodeA and nodeB
+}
+
+Link.setDefaults = function(linkObject) {
+  /**
+   * Link (/Transition/Arc) Configuration
+   */
+  linkObject.font = '16px "Inconsolata", monospace'
+  linkObject.fgColor = "black";
+  linkObject.bgColor = "white";
+  linkObject.selectedColor = "blue";
 }
 
 Link.prototype.getAnchorPoint = function() {
@@ -88,7 +644,7 @@ Link.prototype.setAnchorPoint = function(x, y) {
   this.parallelPart = (dx * (x - this.nodeA.x) + dy * (y - this.nodeA.y)) / (scale * scale);
   this.perpendicularPart = (dx * (y - this.nodeA.y) - dy * (x - this.nodeA.x)) / scale;
   // snap to a straight line
-  if (this.parallelPart > 0 && this.parallelPart < 1 && Math.abs(this.perpendicularPart) < snapToPadding) {
+  if (this.parallelPart > 0 && this.parallelPart < 1 && Math.abs(this.perpendicularPart) < this.parent.snapToPadding) {
     this.lineAngleAdjust = (this.perpendicularPart < 0) * Math.PI;
     this.perpendicularPart = 0;
   }
@@ -112,8 +668,8 @@ Link.prototype.getEndPointsAndCircle = function() {
   var circle = circleFromThreePoints(this.nodeA.x, this.nodeA.y, this.nodeB.x, this.nodeB.y, anchor.x, anchor.y);
   var isReversed = (this.perpendicularPart > 0);
   var reverseScale = isReversed ? 1 : -1;
-  var startAngle = Math.atan2(this.nodeA.y - circle.y, this.nodeA.x - circle.x) - reverseScale * nodeRadius / circle.radius;
-  var endAngle = Math.atan2(this.nodeB.y - circle.y, this.nodeB.x - circle.x) + reverseScale * nodeRadius / circle.radius;
+  var startAngle = Math.atan2(this.nodeA.y - circle.y, this.nodeA.x - circle.x) - reverseScale * this.nodeA.radius / circle.radius;
+  var endAngle = Math.atan2(this.nodeB.y - circle.y, this.nodeB.x - circle.x) + reverseScale * this.nodeB.radius / circle.radius;
   var startX = circle.x + circle.radius * Math.cos(startAngle);
   var startY = circle.y + circle.radius * Math.sin(startAngle);
   var endX = circle.x + circle.radius * Math.cos(endAngle);
@@ -134,8 +690,20 @@ Link.prototype.getEndPointsAndCircle = function() {
   };
 };
 
+Link.applySelectColors = function (linkObject, c) {
+  //If the current object is selected, set the stroke color accordingly.
+  if(linkObject.parent.selectedObject == linkObject) {
+    c.fillStyle = c.strokeStyle = linkObject.selectedColor;
+  } else {
+    c.fillStyle = c.strokeStyle = linkObject.fgColor;
+  }
+}
+
 Link.prototype.draw = function(c) {
   var stuff = this.getEndPointsAndCircle();
+
+  Link.applySelectColors(this, c);
+
   // draw arc
   c.beginPath();
   if (stuff.hasCircle) {
@@ -161,12 +729,12 @@ Link.prototype.draw = function(c) {
     var textAngle = (startAngle + endAngle) / 2 + stuff.isReversed * Math.PI;
     var textX = stuff.circleX + stuff.circleRadius * Math.cos(textAngle);
     var textY = stuff.circleY + stuff.circleRadius * Math.sin(textAngle);
-    drawText(c, this.text, textX, textY, textAngle, selectedObject == this, linkFont);
+    drawText(c, this.text, textX, textY, textAngle, this.parent.selectedObject == this, this.font);
   } else {
     var textX = (stuff.startX + stuff.endX) / 2;
     var textY = (stuff.startY + stuff.endY) / 2;
     var textAngle = Math.atan2(stuff.endX - stuff.startX, stuff.startY - stuff.endY);
-    drawText(c, this.text, textX, textY, textAngle + this.lineAngleAdjust, selectedObject == this, linkFont);
+    drawText(c, this.text, textX, textY, textAngle + this.lineAngleAdjust, this.parent.selectedObject == this, this.font);
   }
 };
 
@@ -176,7 +744,7 @@ Link.prototype.containsPoint = function(x, y) {
     var dx = x - stuff.circleX;
     var dy = y - stuff.circleY;
     var distance = Math.sqrt(dx*dx + dy*dy) - stuff.circleRadius;
-    if (Math.abs(distance) < hitTargetPadding) {
+    if (Math.abs(distance) < this.parent.hitTargetPadding) {
       var angle = Math.atan2(dy, dx);
       var startAngle = stuff.startAngle;
       var endAngle = stuff.endAngle;
@@ -201,12 +769,29 @@ Link.prototype.containsPoint = function(x, y) {
     var length = Math.sqrt(dx*dx + dy*dy);
     var percent = (dx * (x - stuff.startX) + dy * (y - stuff.startY)) / (length * length);
     var distance = (dx * (y - stuff.startY) - dy * (x - stuff.startX)) / length;
-    return (percent > 0 && percent < 1 && Math.abs(distance) < hitTargetPadding);
+    return (percent > 0 && percent < 1 && Math.abs(distance) < this.parent.hitTargetPadding);
   }
   return false;
 };
 
-function Node(x, y) {
+function Node(x, y, designer) {
+
+  /** 
+   * Node defaults.
+   * TODO: Abstract to somewhere else.
+   */
+  this.parent = designer
+  this.radius = 55;
+  this.outline = 2;
+  this.fgColor = "black";
+  this.bgColor = "white";
+  this.selectedColor = "blue";
+  this.font = '16px "Droid Sans", sans-serif'
+  this.outputPadding = 14; //pixels
+  this.outputFont = '20px "Inconsolata", monospace'
+  this.outputColor = "#101010";
+
+
   this.x = x;
   this.y = y;
   this.mouseOffsetX = 0;
@@ -214,6 +799,8 @@ function Node(x, y) {
   this.isAcceptState = false;
   this.text = '';
   this.outputs = '';
+
+  
 }
 
 Node.prototype.setMouseStart = function(x, y) {
@@ -227,27 +814,30 @@ Node.prototype.setAnchorPoint = function(x, y) {
 };
 
 Node.prototype.draw = function(c) {
+
+  c.lineWidth = this.outline;
+
   // draw the circle
   c.beginPath();
-  c.arc(this.x, this.y, nodeRadius, 0, 2 * Math.PI, false);
-  c.fillStyle=nodeBgColor;
+  c.arc(this.x, this.y, this.radius, 0, 2 * Math.PI, false);
+  c.fillStyle=this.bgColor;
   c.fill();
-  c.strokeStyle= (selectedObject === this && !inOutputMode) ? nodeSelectedColor : nodeFgColor;
+  c.strokeStyle= (this.parent.selectedObject === this && !this.parent.inOutputMode) ? this.selectedColor : this.fgColor;
   c.stroke();
 
   // draw the state name
-  c.fillStyle= (selectedObject === this && !inOutputMode) ? nodeSelectedColor : nodeFgColor;
-  drawText(c, this.text, this.x, this.y, null, selectedObject == this && !inOutputMode, nodeFont);
+  c.fillStyle = (this.parent.selectedObject === this && !this.parent.inOutputMode) ? this.selectedColor : this.fgColor;
+  drawText(c, this.text, this.x, this.y, null, this.parent.selectedObject == this && !this.parent.inOutputMode, this.font);
 
   //draw the state's moore outputs
-  c.fillStyle= (selectedObject === this && inOutputMode) ? nodeSelectedColor : nodeOutputColor;
-  drawText(c, this.outputs, this.x, this.y + nodeRadius + nodeOutputPadding, null, selectedObject == this && inOutputMode, nodeOutputFont);
-  c.fillStyle= (selectedObject === this) ? nodeSelectedColor : nodeFgColor;
+  c.fillStyle= (this.parent.selectedObject === this && this.parent.inOutputMode) ? this.selectedColor : this.outputColor;
+  drawText(c, this.outputs, this.x, this.y + this.radius + this.outputPadding, null, this.parent.selectedObject == this && this.parent.inOutputMode, this.outputFont);
+  c.fillStyle= (this.parent.selectedObject === this) ? this.selectedColor : this.fgColor;
 
   // draw a double circle for an accept state
   if (this.isAcceptState) {
     c.beginPath();
-    c.arc(this.x, this.y, nodeRadius - 6, 0, 2 * Math.PI, false);
+    c.arc(this.x, this.y, this.radius - 6, 0, 2 * Math.PI, false);
     c.stroke();
   }
 
@@ -258,16 +848,22 @@ Node.prototype.closestPointOnCircle = function(x, y) {
   var dy = y - this.y;
   var scale = Math.sqrt(dx * dx + dy * dy);
   return {
-    'x': this.x + dx * nodeRadius / scale,
-    'y': this.y + dy * nodeRadius / scale
+    'x': this.x + dx * this.radius / scale,
+    'y': this.y + dy * this.radius / scale
   };
 };
 
 Node.prototype.containsPoint = function(x, y) {
-  return (x - this.x)*(x - this.x) + (y - this.y)*(y - this.y) < nodeRadius*nodeRadius;
+  return (x - this.x)*(x - this.x) + (y - this.y)*(y - this.y) < this.radius*this.radius;
 };
 
-function SelfLink(node, mouse) {
+function SelfLink(node, mouse, designer) {
+
+  this.parent = designer;
+
+  //get the defaults from the link object:
+  Link.setDefaults(this);
+
   this.node = node;
   this.anchorAngle = 0;
   this.mouseOffsetAngle = 0;
@@ -293,9 +889,9 @@ SelfLink.prototype.setAnchorPoint = function(x, y) {
 };
 
 SelfLink.prototype.getEndPointsAndCircle = function() {
-  var circleX = this.node.x + 1.5 * nodeRadius * Math.cos(this.anchorAngle);
-  var circleY = this.node.y + 1.5 * nodeRadius * Math.sin(this.anchorAngle);
-  var circleRadius = 0.75 * nodeRadius;
+  var circleX = this.node.x + 1.5 * this.node.radius * Math.cos(this.anchorAngle);
+  var circleY = this.node.y + 1.5 * this.node.radius * Math.sin(this.anchorAngle);
+  var circleRadius = 0.75 * this.node.radius;
   var startAngle = this.anchorAngle - Math.PI * 0.8;
   var endAngle = this.anchorAngle + Math.PI * 0.8;
   var startX = circleX + circleRadius * Math.cos(startAngle);
@@ -318,6 +914,9 @@ SelfLink.prototype.getEndPointsAndCircle = function() {
 
 SelfLink.prototype.draw = function(c) {
   var stuff = this.getEndPointsAndCircle();
+
+  Link.applySelectColors(this, c);
+
   // draw arc
   c.beginPath();
   c.arc(stuff.circleX, stuff.circleY, stuff.circleRadius, stuff.startAngle, stuff.endAngle, false);
@@ -325,7 +924,7 @@ SelfLink.prototype.draw = function(c) {
   // draw the text on the loop farthest from the node
   var textX = stuff.circleX + stuff.circleRadius * Math.cos(this.anchorAngle);
   var textY = stuff.circleY + stuff.circleRadius * Math.sin(this.anchorAngle);
-  drawText(c, this.text, textX, textY, this.anchorAngle, selectedObject == this, linkFont);
+  drawText(c, this.text, textX, textY, this.anchorAngle, this.parent.selectedObject == this, this.font);
   // draw the head of the arrow
   drawArrow(c, stuff.endX, stuff.endY, stuff.endAngle + Math.PI * 0.4);
 };
@@ -335,10 +934,14 @@ SelfLink.prototype.containsPoint = function(x, y) {
   var dx = x - stuff.circleX;
   var dy = y - stuff.circleY;
   var distance = Math.sqrt(dx*dx + dy*dy) - stuff.circleRadius;
-  return (Math.abs(distance) < hitTargetPadding);
+  return (Math.abs(distance) < this.parent.hitTargetPadding);
 };
 
-function StartLink(node, start) {
+function StartLink(node, start, designer) {
+  this.parent = designer;
+
+  Link.setDefaults(this);
+
   this.node = node;
   this.deltaX = 0;
   this.deltaY = 0;
@@ -353,11 +956,11 @@ StartLink.prototype.setAnchorPoint = function(x, y) {
   this.deltaX = x - this.node.x;
   this.deltaY = y - this.node.y;
 
-  if (Math.abs(this.deltaX) < snapToPadding) {
+  if (Math.abs(this.deltaX) < this.parent.snapToPadding) {
     this.deltaX = 0;
   }
 
-  if (Math.abs(this.deltaY) < snapToPadding) {
+  if (Math.abs(this.deltaY) < this.parent.snapToPadding) {
     this.deltaY = 0;
   }
 };
@@ -376,6 +979,8 @@ StartLink.prototype.getEndPoints = function() {
 
 StartLink.prototype.draw = function(c) {
   var stuff = this.getEndPoints();
+
+  Link.applySelectColors(this, c);
 
   // draw the line
   c.beginPath();
@@ -398,7 +1003,7 @@ StartLink.prototype.containsPoint = function(x, y) {
   var length = Math.sqrt(dx*dx + dy*dy);
   var percent = (dx * (x - stuff.startX) + dy * (y - stuff.startY)) / (length * length);
   var distance = (dx * (y - stuff.startY) - dy * (x - stuff.startX)) / length;
-  return (percent > 0 && percent < 1 && Math.abs(distance) < hitTargetPadding);
+  return (percent > 0 && percent < 1 && Math.abs(distance) < this.parent.hitTargetPadding);
 };
 
 function TemporaryLink(from, to) {
@@ -407,6 +1012,7 @@ function TemporaryLink(from, to) {
 }
 
 TemporaryLink.prototype.draw = function(c) {
+
   // draw the line
   c.beginPath();
   c.moveTo(this.to.x, this.to.y);
@@ -663,9 +1269,6 @@ function drawArrow(c, x, y, angle) {
   c.fill();
 }
 
-function canvasHasFocus() {
-  return (document.activeElement || document.body) == document.body;
-}
 
 function drawText(c, originalText, x, y, angleOrNull, isSelected, font) {
   text = convertLatexShortcuts(originalText);
@@ -708,291 +1311,76 @@ var caretVisible = true;
 
 function resetCaret() {
   clearInterval(caretTimer);
-  caretTimer = setInterval('caretVisible = !caretVisible; draw()', 500);
+  caretTimer = setInterval('caretVisible = !caretVisible; redrawAll()', 500);
   caretVisible = true;
 }
 
-var canvas;
-var nodes = [];
-var links = [];
+/*
 
-/** 
- * Node Configuration.
- */
-var nodeRadius = 55;
-var nodeOutline = 2;
-var nodeFgColor = "black";
-var nodeBgColor = "white";
-var nodeSelectedColor = "blue";
-var nodeFont = '16px "Droid Sans", sans-serif'
-var nodeOutputPadding = 14; //pixels
-var nodeOutputFont = '20px "Inconsolata", monospace'
-var nodeOutputColor = "#101010";
-
-/**
- * Link (/Transition/Arc) Configuration
- */
-var linkFont = '16px "Inconsolata", monospace'
-var linkFgColor = "black";
-var linkBgColor = "white";
-var linkSelectedColor = "blue";
-
-/**
- * General Config
- */
-var snapToPadding = 20; // pixels
-var hitTargetPadding = 20; // pixels
-
-
-var originalClick;
-var cursorVisible = true;
-var selectedObject = null; // either a Link or a Node
-var currentLink = null; // a Link
-var movingObject = false;
-var inOutputMode = false; //determines if we're in edit-output mode
-
-function drawUsing(c) {
-  c.clearRect(0, 0, canvas.width, canvas.height);
-  c.save();
-  c.translate(0.5, 0.5);
-
-  for (var i = 0; i < nodes.length; i++) {
-    c.lineWidth = nodeOutline;
-    c.fillStyle = c.strokeStyle = (nodes[i] == selectedObject) ?  nodeSelectedColor : nodeFgColor;
-    nodes[i].draw(c);
-  }
-  for (var i = 0; i < links.length; i++) {
-    c.lineWidth = nodeOutline;
-    c.fillStyle = c.strokeStyle = (links[i] == selectedObject) ?  linkSelectedColor : linkFgColor;
-    links[i].draw(c);
-  }
-  if (currentLink != null) {
-    c.lineWidth = nodeOutline;
-    c.fillStyle = c.strokeStyle = linkFgColor;
-    currentLink.draw(c);
-  }
-
-  c.restore();
+function save_undo_point() {
+   
 }
 
-function draw() {
-  var context = canvas.getContext('2d');
-  context.canvas.width = window.innerWidth;
-  context.canvas.height = window.innerHeight;
-  drawUsing(context);
-  saveBackup();
+function undo() {
+
+    //If there's nothing on the undo stack, abort.
+    if(undo_stack.count == 0) {
+        return;
+    }
+
 }
 
-function selectObject(x, y) {
-  for (var i = 0; i < nodes.length; i++) {
-    if (nodes[i].containsPoint(x, y)) {
-      return nodes[i];
-    }
+*/
+
+var designers = [];
+
+function redrawAll() {
+  for(var i = 0; i < designers.count; ++i) {
+    designers[i].draw();
   }
-  for (var i = 0; i < links.length; i++) {
-    if (links[i].containsPoint(x, y)) {
-      return links[i];
-    }
-  }
-  return null;
 }
 
-function snapNode(node) {
-  for (var i = 0; i < nodes.length; i++) {
-    if (nodes[i] == node) continue;
+function register_new_designer(designer) {
+  designers.push(designer);
+}
 
-    if (Math.abs(node.x - nodes[i].x) < snapToPadding) {
-      node.x = nodes[i].x;
-    }
 
-    if (Math.abs(node.y - nodes[i].y) < snapToPadding) {
-      node.y = nodes[i].y;
-    }
-  }
+function load_fonts() {
+     //Load fonts before continuing...
+     WebFontConfig = {
+        google: { families: [ 'Droid+Sans::latin' ] },
+        active: function() { redrawAll(); }
+        /* inactive: font_fallback */
+      };
+      (function() {
+        var wf = document.createElement('script');
+        wf.src = ('https:' == document.location.protocol ? 'https' : 'http') +
+          '://ajax.googleapis.com/ajax/libs/webfont/1/webfont.js';
+        wf.type = 'text/javascript';
+        wf.async = 'true';
+        var s = document.getElementsByTagName('script')[0];
+        s.parentNode.insertBefore(wf, s);
+      })()
 }
 
 window.onload = function() {
-  canvas = document.getElementById('canvas');
-  restoreBackup();
-  draw();
 
-  canvas.onmousedown = function(e) {
-    var mouse = crossBrowserRelativeMousePos(e);
-    selectedObject = selectObject(mouse.x, mouse.y);
-    movingObject = false;
-    inOutputMode = false;
-    originalClick = mouse;
+    load_fonts();
 
-    if (selectedObject != null) {
-      if (shift && selectedObject instanceof Node) {
-        currentLink = new SelfLink(selectedObject, mouse);
-      } else {
-        movingObject = true;
-        deltaMouseX = deltaMouseY = 0;
-        if (selectedObject.setMouseStart) {
-          selectedObject.setMouseStart(mouse.x, mouse.y);
-        }
-      }
-      resetCaret();
-    } else if (shift) {
-      currentLink = new TemporaryLink(mouse, mouse);
-    }
+    //TODO: abstract to another file?
+    canvas = document.getElementById('canvas');
+    designer = new FSMDesigner(canvas);
+    designer.restoreBackup();
+    designer.draw();
+    register_new_designer(designer);
 
-    draw();
-
-    if (canvasHasFocus()) {
-      // disable drag-and-drop only if the canvas is already focused
-      return false;
-    } else {
-      // otherwise, let the browser switch the focus away from wherever it was
-      resetCaret();
-      return true;
-    }
-  };
-
-  canvas.ondblclick = function(e) {
-    var mouse = crossBrowserRelativeMousePos(e);
-    selectedObject = selectObject(mouse.x, mouse.y);
-    inOutputMode = false;
-
-    if (selectedObject == null) {
-      selectedObject = new Node(mouse.x, mouse.y);
-      nodes.push(selectedObject);
-      resetCaret();
-      draw();
-    } 
-    else if (selectedObject instanceof Node) {
-
-      inOutputMode = true;
-      draw();
-        /*
-      selectedObject.isAcceptState = !selectedObject.isAcceptState;
-      draw();
-      */
-    }
-  };
-
-  canvas.onmousemove = function(e) {
-    var mouse = crossBrowserRelativeMousePos(e);
-
-    if (currentLink != null) {
-      var targetNode = selectObject(mouse.x, mouse.y);
-      if (!(targetNode instanceof Node)) {
-        targetNode = null;
-      }
-
-      if (selectedObject == null) {
-        if (targetNode != null) {
-          currentLink = new StartLink(targetNode, originalClick);
-        } else {
-          currentLink = new TemporaryLink(originalClick, mouse);
-        }
-      } else {
-        if (targetNode == selectedObject) {
-          currentLink = new SelfLink(selectedObject, mouse);
-        } else if (targetNode != null) {
-          currentLink = new Link(selectedObject, targetNode);
-        } else {
-          currentLink = new TemporaryLink(selectedObject.closestPointOnCircle(mouse.x, mouse.y), mouse);
-        }
-      }
-      draw();
-    }
-
-    if (movingObject) {
-      selectedObject.setAnchorPoint(mouse.x, mouse.y);
-      if (selectedObject instanceof Node) {
-        snapNode(selectedObject);
-      }
-      draw();
-    }
-  };
-
-  canvas.onmouseup = function(e) {
-    movingObject = false;
-
-    if (currentLink != null) {
-      if (!(currentLink instanceof TemporaryLink)) {
-        selectedObject = currentLink;
-        links.push(currentLink);
-        resetCaret();
-      }
-      currentLink = null;
-      draw();
-    }
-  };
+    document.getElementById('btnNew').onclick = function () { designer.clear() };
+    document.getElementById('btnUndo').onclick = function () { designer.undo() };
+    document.getElementById('btnRedo').onclick = function () { designer.redo() };
 };
 
-var shift = false;
 
-document.onkeydown = function(e) {
-  var key = crossBrowserKey(e);
 
-  if (key == 16) {
-    shift = true;
-  } else if (!canvasHasFocus()) {
-    // don't read keystrokes when other things have focus
-    return true;
-  } else if (selectedObject != null) {
-    if (key == 8) { // backspace key
-      if(inOutputMode && selectedObject.outputs) {
-          selectedObject.outputs = selectedObject.outputs.substr(0, selectedObject.outputs.length - 1);
-      } else if(selectedObject.text) {
-          selectedObject.text = selectedObject.text.substr(0, selectedObject.text.length - 1);
-      }
-      resetCaret();
-      draw();
-    } else if (key == 46) { // delete key
-      for (var i = 0; i < nodes.length; i++) {
-        if (nodes[i] == selectedObject) {
-          nodes.splice(i--, 1);
-        }
-      }
-      for (var i = 0; i < links.length; i++) {
-        if (links[i] == selectedObject || links[i].node == selectedObject || links[i].nodeA == selectedObject || links[i].nodeB == selectedObject) {
-          links.splice(i--, 1);
-        }
-      }
-      selectedObject = null;
-      draw();
-    }
-  }
-
-  // backspace is a shortcut for the back button, but do NOT want to change pages
-  if (key == 8) return false;
-};
-
-document.onkeyup = function(e) {
-  var key = crossBrowserKey(e);
-
-  if (key == 16) {
-    shift = false;
-  }
-};
-
-document.onkeypress = function(e) {
-  // don't read keystrokes when other things have focus
-  var key = crossBrowserKey(e);
-  if (!canvasHasFocus()) {
-    // don't read keystrokes when other things have focus
-    return true;
-  } else if (key >= 0x20 && key <= 0x7E && !e.metaKey && !e.altKey && !e.ctrlKey && selectedObject != null && 'text' in selectedObject) {
-
-    if(inOutputMode) {
-        selectedObject.outputs += String.fromCharCode(key);
-    } else {
-        selectedObject.text += String.fromCharCode(key);
-    }
-    resetCaret();
-    draw();
-
-    // don't let keys do their actions (like space scrolls down the page)
-    return false;
-  } else if (key == 8) {
-    // backspace is a shortcut for the back button, but do NOT want to change pages
-    return false;
-  }
-};
 
 function crossBrowserKey(e) {
   e = e || window.event;
@@ -1034,6 +1422,7 @@ function output(text) {
   element.value = text;
 }
 
+//FIXME
 function saveAsPNG() {
   var oldSelectedObject = selectedObject;
   selectedObject = null;
@@ -1042,6 +1431,7 @@ function saveAsPNG() {
   document.location.href = pngData;
 }
 
+//FIXME
 function saveAsSVG() {
   var exporter = new ExportAsSVG();
   var oldSelectedObject = selectedObject;
@@ -1054,6 +1444,7 @@ function saveAsSVG() {
   // document.location.href = 'data:image/svg+xml;base64,' + btoa(svgData);
 }
 
+//FIXME
 function saveAsLaTeX() {
   var exporter = new ExportAsLaTeX();
   var oldSelectedObject = selectedObject;
@@ -1084,103 +1475,5 @@ function fixed(number, digits) {
   return number.toFixed(digits).replace(/0+$/, '').replace(/\.$/, '');
 }
 
-function restoreBackup() {
-  if (!localStorage || !JSON) {
-    return;
-  }
 
-  try {
-    var backup = JSON.parse(localStorage['fsm']);
 
-    for (var i = 0; i < backup.nodes.length; i++) {
-      var backupNode = backup.nodes[i];
-      var node = new Node(backupNode.x, backupNode.y);
-      node.isAcceptState = backupNode.isAcceptState;
-      node.text = backupNode.text;
-      node.outputs = backupNode.outputs;
-      nodes.push(node);
-    }
-    for (var i = 0; i < backup.links.length; i++) {
-      var backupLink = backup.links[i];
-      var link = null;
-      if (backupLink.type == 'SelfLink') {
-        link = new SelfLink(nodes[backupLink.node]);
-        link.anchorAngle = backupLink.anchorAngle;
-        link.text = backupLink.text;
-      } else if (backupLink.type == 'StartLink') {
-        link = new StartLink(nodes[backupLink.node]);
-        link.deltaX = backupLink.deltaX;
-        link.deltaY = backupLink.deltaY;
-        link.text = backupLink.text;
-      } else if (backupLink.type == 'Link') {
-        link = new Link(nodes[backupLink.nodeA], nodes[backupLink.nodeB]);
-        link.parallelPart = backupLink.parallelPart;
-        link.perpendicularPart = backupLink.perpendicularPart;
-        link.text = backupLink.text;
-        link.lineAngleAdjust = backupLink.lineAngleAdjust;
-      }
-      if (link != null) {
-        links.push(link);
-      }
-    }
-  } catch(e) {
-    localStorage['fsm'] = '';
-  }
-}
-
-function saveBackup() {
-  if (!localStorage || !JSON) {
-    return;
-  }
-
-  var backup = {
-    'nodes': [],
-    'links': []
-  };
-  for (var i = 0; i < nodes.length; i++) {
-    var node = nodes[i];
-    var backupNode = {
-      'x': node.x,
-      'y': node.y,
-      'text': node.text,
-      'outputs': node.outputs,
-      'isAcceptState': node.isAcceptState
-    };
-    backup.nodes.push(backupNode);
-  }
-  for (var i = 0; i < links.length; i++) {
-    var link = links[i];
-    var backupLink = null;
-    if (link instanceof SelfLink) {
-      backupLink = {
-        'type': 'SelfLink',
-        'node': nodes.indexOf(link.node),
-        'text': link.text,
-        'anchorAngle': link.anchorAngle
-      };
-    } else if (link instanceof StartLink) {
-      backupLink = {
-        'type': 'StartLink',
-        'node': nodes.indexOf(link.node),
-        'text': link.text,
-        'deltaX': link.deltaX,
-        'deltaY': link.deltaY
-      };
-    } else if (link instanceof Link) {
-      backupLink = {
-        'type': 'Link',
-        'nodeA': nodes.indexOf(link.nodeA),
-        'nodeB': nodes.indexOf(link.nodeB),
-        'text': link.text,
-        'lineAngleAdjust': link.lineAngleAdjust,
-        'parallelPart': link.parallelPart,
-        'perpendicularPart': link.perpendicularPart
-      };
-    }
-    if (backupLink != null) {
-      backup.links.push(backupLink);
-    }
-  }
-
-  localStorage['fsm'] = JSON.stringify(backup);
-}

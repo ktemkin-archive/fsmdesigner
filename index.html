@@ -3,13 +3,20 @@
     <head>
         <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
         <title>FSM Designer</title>
-        <link href='http://fonts.googleapis.com/css?family=Droid+Sans|Inconsolata' rel='stylesheet' type='text/css'>
-        <link href='core.css' rel='stylesheet' type='text/css'>
+        <link href='css/core.css' rel='stylesheet' type='text/css'>
+        <link href='css/icons.css' rel='stylesheet' type='text/css'>
         <script type="text/javascript" src="fsm.js"></script>
 </head>
 <body>
-    <div id="toolbar">
-        These are almost buttons.
+    <div id="toolbar" unselectable="on">
+        <button id="btnNew" class="toolbutton icon-bolt"> New</button>
+        <button class="toolbutton icon-save"> Save</button>
+        <button class="toolbutton icon-folder-open"> Open</button>
+        <span class="seperator">|</span>
+        <button id="btnUndo" class="toolbutton icon-undo"> Undo</button>
+        <button id="btnRedo" class="toolbutton icon-repeat"> Redo</button>
+        <span class="seperator">|</span>
+        <button class="toolbutton icon-info-sign"> About</button>
     </div>
     <canvas id="canvas">
         <span class="unsupported">Your browser does not support<br>the HTML5 &lt;canvas&gt; element</span>
