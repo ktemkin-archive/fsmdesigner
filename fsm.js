@@ -1,8 +1,12 @@
 /*
- Based on:
+ 
+ Finite State Machine Designer
+ portions Copyright (c) Binghamton University,
+ author: Kyle J. Temkin <ktemkin@binghamton.edu>
 
+ Based on:
  Finite State Machine Designer (http://madebyevan.com/fsm/)
- Copyright (c) 2010 Evan Wallace
+ portions Copyright (c) 2010 Evan Wallace
 
  Permission is hereby granted, free of charge, to any person
  obtaining a copy of this software and associated documentation
@@ -198,12 +202,15 @@ FSMDesigner.prototype.handlekeydown = function (e) {
     return true;
   } else if (this.selectedObject != null) {
     if (key == 8) { // backspace key
+
+
       //FIXME modalbehavior
       if(this.inOutputMode && this.selectedObject.outputs) {
           this.selectedObject.outputs = this.selectedObject.outputs.substr(0, this.selectedObject.outputs.length - 1);
-      } else if(this.selectedObject.text) {
+      } else if(!this.inOutputMode && this.selectedObject.text) {
           this.selectedObject.text = this.selectedObject.text.substr(0, this.selectedObject.text.length - 1);
       }
+
       resetCaret();
       this.draw();
     } else if (key == 46) { // delete key
