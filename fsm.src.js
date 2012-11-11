@@ -543,8 +543,8 @@ FSMDesigner.prototype.draw = function () {
   //TODO extract me to somewhere else
   context.canvas.width = window.innerWidth;
   context.canvas.height = window.innerHeight - document.getElementById("toolbar").offsetHeight;;
-  context.canvas.style.width = window.innerWidth;
-  context.canvas.style.height = window.innerHeight;
+  context.canvas.style.width = window.innerWidth + 'px';
+  context.canvas.style.height = window.innerHeight + 'px';
 
   //Perform the core modification...
   this.drawUsing(context);
