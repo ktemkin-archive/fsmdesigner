@@ -108,6 +108,24 @@ FSMDesigner.prototype.handledrop = function(e) {
 
 }
 
+FSMDesigner.prototype.exportPNG = function() {
+  
+  //Temporarily deslect the active element, so it doesn't show as highlighted
+  //in the exported copy.
+  var oldSelectedObject = this.selectedObject;
+  this.selectedObject = null;
+
+  //Capture a PNG from the canvas.
+  var pngData = canvas.toDataURL('image/png');
+
+  //Reset the selection.
+  this.selectedObject = oldSelectedObject;
+
+  //And send the image to be captured, in a new tab.
+  window.open(pngData, '_blank');
+  window.focus();
+}
+
 /**
  *  Load a FSM diagram from the file specified.
  */
@@ -1678,6 +1696,11 @@ window.onload = function() {
      */
     document.getElementById('btnOpen').onclick = function () { document.getElementById('fileOpen').click(); };
     document.getElementById('fileOpen').onchange = function(e) { handleOpen(designer, e); };
+
+    /**
+     * File export set-up.
+     */ 
+    document.getElementById('btnSavePNG').onclick = function() { designer.exportPNG(); };
 };
 
 
@@ -1721,14 +1744,6 @@ function output(text) {
   element.value = text;
 }
 
-//FIXME
-function saveAsPNG() {
-  var oldSelectedObject = selectedObject;
-  selectedObject = null;
-  selectedObject = oldSelectedObject;
-  var pngData = canvas.toDataURL('image/png');
-  document.location.href = pngData;
-}
 
 //FIXME
 function saveAsSVG() {
