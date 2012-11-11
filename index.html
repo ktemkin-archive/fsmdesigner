@@ -5,20 +5,31 @@
         <title>FSM Designer</title>
         <link href='css/core.css' rel='stylesheet' type='text/css'>
         <link href='css/icons.css' rel='stylesheet' type='text/css'>
+        <script type="text/javascript" src="lib/downloadify.min.js"></script>
+        <script type="text/javascript" src="lib/swfobject.js"></script>
         <script type="text/javascript" src="fsm.js"></script>
 </head>
 <body>
     <div id="toolbar" unselectable="on">
         <button id="btnNew" class="toolbutton icon-bolt"> New</button>
-        <button class="toolbutton icon-save"> Save</button>
+        <span class="seperator">|</span>
+
+        <div id="saveButtons">
+            <span id="btnSave">&nbsp;</span>
+            <button id="btnSaveDummy" class="toolbutton icon-save"> Save</button -->
+        </div>
+
         <button class="toolbutton icon-folder-open"> Open</button>
         <span class="seperator">|</span>
         <button id="btnUndo" class="toolbutton icon-undo"> Undo</button>
         <button id="btnRedo" class="toolbutton icon-repeat"> Redo</button>
         <span class="seperator">|</span>
-        <button class="toolbutton icon-info-sign"> About</button>
+        <button class="toolbutton icon-question-sign"> How to Use</button>
     </div>
     <canvas id="canvas">
         <span class="unsupported">Your browser does not support<br>the HTML5 &lt;canvas&gt; element</span>
     </canvas>
+    <div id="staging">
+      <a id="downloadLink" download="Untitled.fsm" /> 
+    </div>
 </body></html>

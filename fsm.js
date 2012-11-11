@@ -30,38 +30,9 @@
  OTHER DEALINGS IN THE SOFTWARE.
 */
 
-/*
- * base64.js - Base64 encoding and decoding functions
- *
- * See: http://developer.mozilla.org/en/docs/DOM:window.btoa
- *      http://developer.mozilla.org/en/docs/DOM:window.atob
- *
- * Copyright (c) 2007, David Lindquist <david.lindquist@gmail.com>
- * Released under the MIT license
- */
-
-if (typeof btoa == 'undefined') {
-    function btoa(str) {
-        var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
-        var encoded = [];
-        var c = 0;
-        while (c < str.length) {
-            var b0 = str.charCodeAt(c++);
-            var b1 = str.charCodeAt(c++);
-            var b2 = str.charCodeAt(c++);
-            var buf = (b0 << 16) + ((b1 || 0) << 8) + (b2 || 0);
-            var i0 = (buf & (63 << 18)) >> 18;
-            var i1 = (buf & (63 << 12)) >> 12;
-            var i2 = isNaN(b1) ? 64 : (buf & (63 << 6)) >> 6;
-            var i3 = isNaN(b2) ? 64 : (buf & 63);
-            encoded[encoded.length] = chars.charAt(i0);
-            encoded[encoded.length] = chars.charAt(i1);
-            encoded[encoded.length] = chars.charAt(i2);
-            encoded[encoded.length] = chars.charAt(i3);
-        }
-        return encoded.join('');
-    }
-}
+/***
+ * FSMDesigner Class 
+ ***/
 
 function FSMDesigner(canvas) {
 
@@ -79,6 +50,10 @@ function FSMDesigner(canvas) {
   this.currentLink = null; // a Link
   this.movingObject = false;
   this.inOutputMode = false; //determines if we're in edit-output mode
+
+  this.textEntryTimeout = null;
+  this.textEnteredRecently = false;
+  this.textUndoDelay = 2000;
 
   this.nodes = [];
   this.links = [];
@@ -106,21 +81,76 @@ FSMDesigner.ModalBehaviors = {
   CREATE: 'create'
 };
 
+FSMDesigner.KeyCodes = {
+  BACKSPACE: 8,
+  SHIFT: 16,
+  DELETE: 46,
+  UNDO: 26,
+  REDO: 25,
+  z: 122,
+  Z: 90
+}
+
+/**
+ *  Determines if two designer "undo" states are equivalent.
+ *  (No relation to nodes.)
+ */
+FSMDesigner.stepsEquivalent = function(a, b) {
+  //HACK FIXME rewrite me!
+  return JSON.stringify(a) == JSON.stringify(b);
+}
+
+FSMDesigner.prototype.saveFileHTML5 = function() {
+
+  //Serialize the current state...
+  var fileContents = JSON.stringify(this.createBackup()); 
+
+  //And convert it to a HTML5 "Data URI".
+  var uriContent = "data:application/x-fsm," + encodeURIComponent(fileContents);
+
+  //Ask the user's browser to download it.
+  document.location.href = uriContent;
+
+}
+
+/**
+ * Return the data which should be saved to a file
+ */
+FSMDesigner.prototype.getDataToSave = function() {
+  return JSON.stringify(this.createBackup());
+}
+
+/**
+ * Saves an "undo step", which marks a point at which the user is capable of returning to by pressing undo.
+ */
 FSMDesigner.prototype.saveUndoStep = function() {
+
+  var state = this.createBackup();
+  var last_state = this.undo_stack[this.undo_stack.length - 1];
+
+  //If the undo-step doesn't make any change, don't bother committing it.
+  if(FSMDesigner.stepsEquivalent(state, last_state)) {
+    return;
+  }
+
   //If we're about to exceed the undo history size, 
   //get rid of the least recent undo.
-  if(this.undo_stack.count >= this.undo_history_size) {
+  if(this.undo_stack.length >= this.undo_history_size) {
       this.undo_stack.shift();
   }
 
   //Push a backup onto the undo stack.
-  this.undo_stack.push(this.createBackup());
+  this.undo_stack.push(state);
 }
 
+/**
+ * Saves a "redo step", which marks a point at which the user is capable of returning to by pressing redo.
+ * This will most likely only need to be called by the undo() function; or functions which emulate it.
+ */
 FSMDesigner.prototype.saveRedoStep = function() {
   //If we're about to exceed the undo history size, 
   //get rid of the least recent undo.
-  if(this.redo_stack.count >= this.redo_history_size) {
+  if(this.redo_stack.length >= this.redo_history_size) {
       this.redo_stack.shift();
   }
 
@@ -128,31 +158,49 @@ FSMDesigner.prototype.saveRedoStep = function() {
   this.redo_stack.push(this.createBackup());
 }
 
-
+/**
+ * Undo a user action.
+ */
 FSMDesigner.prototype.undo = function() {
+
+  //If there's nothing to undo, abort!
+  if(this.undo_stack.length == 0) {
+    return;
+  }
 
   //Push the current state onto the Redo stack...
   this.saveRedoStep();
 
   //Undo the last change...
-  this.restoreBackup(this.undo_stack.pop());
+  this.recreateState(this.undo_stack.pop());
 
   //And redraw.
   this.draw();
 }
 
+/**
+ * Re-do a user action.
+ */
 FSMDesigner.prototype.redo = function() {
+
+  //If there's nothing to re-do, abort.
+  if(this.redo_stack.length == 0) {
+    return;
+  }
 
   //Push the current state onto the undo stack...
   this.saveUndoStep();
 
   //Redo the last change...
-  this.restoreBackup(this.redo_stack.pop());
+  this.recreateState(this.redo_stack.pop());
 
   //And redraw.
   this.draw();
 }
 
+/**
+ * Clears the entire design, creating a blank canvas.
+ */
 FSMDesigner.prototype.clear = function(noSave) 
 {
   //Unless we've been instructed not to save, save an undo step.
@@ -191,68 +239,186 @@ FSMDesigner.prototype.selectObject = function(x, y) {
   return null;
 }
 
+/**
+ *  Removes the provided object from the FSM.
+ */
+FSMDesigner.prototype.deleteObject = function(object) {
+  this.deleteNode(object);
+  this.deleteLink(object);
+}
+
+/**
+ *  Deletes the given node.
+ */
+FSMDesigner.prototype.deleteNode = function(node, noRedraw) {
+
+    //Find the node to be deleted...
+    var i = this.nodes.indexOf(node);
+
+    //If we found it, delete it.
+    if(i != -1) {
+
+      //save state before the deletion 
+      if(!noRedraw) {
+        this.saveUndoStep(); 
+      }
+
+      //If this node was the currently selected object, unselect it.
+      if(this.selectedObject == node) {
+        this.selectedObject = null;
+      }
+      
+      //Remove the given node...
+      this.nodes.splice(i--, 1);
+
+      //Remove any links are attached to this node.
+      for(var j = 0; j < this.links.length; j++) {
+        if(this.links[j].connectedTo(node)) {
+          
+          //Delete the link... 
+          this.deleteLink(this.links[j], true);
+
+          //Since we've modified the list, we now need to check the current element again.
+          j--;
+        }
+      }
+
+      //... and redraw.
+      if(!noRedraw) {
+        this.draw();
+      }
+    }
+}
+
+/**
+ *  Deletes the link specified. 
+ *  If the second parameter is "true", this function won't redraw afterwards.
+ */
+FSMDesigner.prototype.deleteLink = function(link, noRedraw) {
+
+  //Find the link to be deleted.
+  var i = this.links.indexOf(link);
+
+  //If we found the it, delete it.
+  if(i != -1) {
+
+      //save state before the deletion 
+      if(!noRedraw) {
+        this.saveUndoStep(); 
+      }
+
+      //If this link was the currently selected object, unselect it.
+      if(this.selectedObject == link) {
+        this.selectedObject = null;
+      }
+
+      //Remove the given link, and redraw.
+      this.links.splice(i--, 1);
+
+      //Unless we've been instructed not to redraw, redraw.
+      if(!noRedraw) {
+        this.draw();
+      }
+  }
+
+}
 
 FSMDesigner.prototype.handlekeydown = function (e) {
+
+  //Get the key-code of the key that was most recently pressed.
   var key = crossBrowserKey(e);
 
-  if (key == 16) {
+  //If the user has just pressed the shift key, switch to "create" mode.
+  if (key == FSMDesigner.KeyCodes.SHIFT) {
     this.modalBehavior = FSMDesigner.ModalBehaviors.CREATE;
-  } else if (!this.hasFocus()) {
-    // don't read keystrokes when other things have focus
+  } 
+  //If we're not looking for a modifier key, and this canvas doesn't have focus,
+  //allow this event handler to propogate to the other handlers.
+  else if (!this.hasFocus()) {
     return true;
-  } else if (this.selectedObject != null) {
-    if (key == 8) { // backspace key
+  } 
+  //If we have a selected object, handle keyPressed events accordingly.
+  else if (this.selectedObject != null) {
 
+    //If the backspace key has been pressed, handle the removal of a single character.
+    if (key == FSMDesigner.KeyCodes.BACKSPACE) { 
 
-      //FIXME modalbehavior
+      //Save an undo step, if necessary.
+      this.handleTextUndoStep();
+
+      //If we're in output-entry mode, and the given node has text to remove...
       if(this.inOutputMode && this.selectedObject.outputs) {
-          this.selectedObject.outputs = this.selectedObject.outputs.substr(0, this.selectedObject.outputs.length - 1);
-      } else if(!this.inOutputMode && this.selectedObject.text) {
-          this.selectedObject.text = this.selectedObject.text.substr(0, this.selectedObject.text.length - 1);
+        //Do so:
+        this.selectedObject.outputs = this.selectedObject.outputs.substr(0, this.selectedObject.outputs.length - 1);
+      } 
+      //When we're not in output mode, handle the same case.
+      else if(!this.inOutputMode && this.selectedObject.text) {
+        this.selectedObject.text = this.selectedObject.text.substr(0, this.selectedObject.text.length - 1);
       }
 
+      //Update text and re-draw.
       resetCaret();
       this.draw();
-    } else if (key == 46) { // delete key
-      for (var i = 0; i < this.nodes.length; i++) {
-        if (this.nodes[i] == this.selectedObject) {
-          this.nodes.splice(i--, 1);
-        }
-      }
-      for (var i = 0; i < this.links.length; i++) {
-        if (this.links[i] == this.selectedObject 
-              || this.links[i].node == this.selectedObject 
-              || this.links[i].nodeA == this.selectedObject 
-              || this.links[i].nodeB == this.selectedObject) {
-          this.links.splice(i--, 1);
-        }
-      }
-      this.selectedObject = null;
-      this.draw();
+
+    }
+    //If the user has pressed delete, delete the selected object.
+    else if (key == FSMDesigner.KeyCodes.DELETE) { 
+      this.deleteObject(this.selectedObject);
     }
   }
 
   // backspace is a shortcut for the back button, but do NOT want to change pages
-  // FIXME?
-  if (key == 8) return false;
+  // FIXME? Should this be somewhere else?
+  if (key == FSMDesigner.KeyCodes.BACKSPACE) { 
+    return false;
+  }
 };
 
 FSMDesigner.prototype.handlekeyup = function(e) {
   var key = crossBrowserKey(e);
 
-  if (key == 16) {
+  if (key == FSMDesigner.KeyCodes.SHIFT) {
     this.modalBehavior = FSMDesigner.ModalBehaviors.POINTER;
   }
 };
 
+FSMDesigner.prototype.handleTextUndoStep = function () {
+
+  //Create a reference to the current object, which will be closed over in the
+  //timeout call below.
+  var _this = this;
+
+  //Create a function which "turns off" the text entry timeout after a period of time.
+  var cancelTimeout = function () { _this.textEnteredRecently = _this.textEntryTimeout = null;  }
+
+  //If the user has entered text recently, re-set the "entered text recently" timer,
+  //and skip seeting an Undo Step.
+  if(this.textEntryTimeout) {
+    clearTimeout(this.textEntryTimeout);
+  }
+  //Otherwise, save an undo step.
+  else {
+    this.saveUndoStep();
+  }
+
+  //Set up a timer, which will keep track of whether text has been entered recently.
+  this.textEnteredRecently = true;
+  this.textEntryTimeout = setTimeout(cancelTimeout, this.textUndoDelay);
+}
+
 FSMDesigner.prototype.handlekeypress = function(e) {
 
-  // don't read keystrokes when other things have focus
   var key = crossBrowserKey(e);
+
   if (!this.hasFocus()) {
     // don't read keystrokes when other things have focus
     return true;
-  } else if (key >= 0x20 && key <= 0x7E && !e.metaKey && !e.altKey && !e.ctrlKey && this.selectedObject != null && 'text' in this.selectedObject) {
+  } 
+  //TODO: replace these with key codes
+  else if (key >= 0x20 && key <= 0x7E && !e.metaKey && !e.altKey && !e.ctrlKey && this.selectedObject != null && 'text' in this.selectedObject) {
+
+    //Save an undo step, if necessary.
+    this.handleTextUndoStep(); 
 
     //FIXME modalbehavior
     if(this.inOutputMode) {
@@ -260,12 +426,25 @@ FSMDesigner.prototype.handlekeypress = function(e) {
     } else {
         this.selectedObject.text += String.fromCharCode(key);
     }
+
     resetCaret();
     this.draw();
 
     // don't let keys do their actions (like space scrolls down the page)
     return false;
-  } else if (key == 8) {
+  }
+  // If we've pressed CTRL+Z, undo the most recent action
+  else if ((key == FSMDesigner.KeyCodes.z && e.ctrlKey && !e.shiftKey) || (key == FSMDesigner.KeyCodes.UNDO && !e.shiftKey)) {
+    this.undo()
+  }
+  // If we've pressed CTRL+Y, undo the most recent action
+  else if ((key == FSMDesigner.KeyCodes.Y && e.ctrlKey)
+            || (key == FSMDesigner.KeyCodes.REDO) 
+            || (key == FSMDesigner.KeyCodes.z && e.ctrlKey && e.shiftKey) 
+            || (key == FSMDesigner.KeyCodes.UNDO && e.shiftKey)) {
+    this.redo()
+  }
+  else if (key == 8) {
     // backspace is a shortcut for the back button, but do NOT want to change pages
     // TODO: move elsewhere?
     return false;
@@ -381,10 +560,7 @@ FSMDesigner.prototype.createBackup = function () {
   return backup;
 }
 
-FSMDesigner.prototype.restoreBackup = function (backup) {
-
-  console.log('Recreating state...');
-  console.log(backup);
+FSMDesigner.prototype.recreateState = function (backup) {
 
   //If no backup was provided, try to restore the "local storage" copy.
   if(backup == null) {
@@ -464,8 +640,19 @@ FSMDesigner.prototype.handlemouseup = function(e) {
     this.movingObject = false;
 
     if (this.currentLink != null) {
+      //If we've just "dropped" a temporary link, convert it to a normal link.
       if (!(this.currentLink instanceof TemporaryLink)) {
+
+        //Save the state before the modification
+        this.saveUndoStep();
+
+        //Change the selected object...
         this.selectedObject = this.currentLink;
+
+        //And, since we've switched to a new object, reset the "text entered" timer.
+        this.textEnteredRecently = false;
+
+
         this.links.push(this.currentLink);
         resetCaret();
       }
@@ -537,8 +724,10 @@ FSMDesigner.prototype.handleSnap = function() {
 FSMDesigner.prototype.handledoubleclick = function(e) {
   var mouse = crossBrowserRelativeMousePos(e);
   this.selectedObject = this.selectObject(mouse.x, mouse.y);
+  this.textEnteredRecently = false;
   this.inOutputMode = false; //FIXME
   if (this.selectedObject == null) {
+    this.saveUndoStep();
     this.selectedObject = new Node(mouse.x, mouse.y, this);
     this.nodes.push(this.selectedObject);
     resetCaret();
@@ -568,12 +757,14 @@ FSMDesigner.prototype.handlemousedown = function(e) {
 
     this.movingObject = false;
     this.inOutputMode = false;
+    this.textEnteredRecently = false;
     this.originalClick = mouse;
 
     if (this.selectedObject != null) {
       if (this.modalBehavior == FSMDesigner.ModalBehaviors.CREATE && this.selectedObject instanceof Node) {
         this.currentLink = new SelfLink(this.selectedObject, mouse, this);
       } else {
+        this.saveUndoStep();
         this.movingObject = true;
         this.deltaMouseX = this.deltaMouseY = 0;
         if (this.selectedObject.setMouseStart) {
@@ -632,6 +823,13 @@ Link.setDefaults = function(linkObject) {
   linkObject.fgColor = "black";
   linkObject.bgColor = "white";
   linkObject.selectedColor = "blue";
+}
+
+/**
+ *  Returns true iff the given link is connected to the node, on either side.
+ */
+Link.prototype.connectedTo = function (node) {
+  return (this.nodeA == node || this.nodeB == node);
 }
 
 Link.prototype.getAnchorPoint = function() {
@@ -881,6 +1079,13 @@ function SelfLink(node, mouse, designer) {
   }
 }
 
+/**
+ *  Returns true iff the given link is connected to the given node.
+ */
+SelfLink.prototype.connectedTo = function (node) {
+  return (this.node == node);
+}
+
 SelfLink.prototype.setMouseStart = function(x, y) {
   this.mouseOffsetAngle = this.anchorAngle - Math.atan2(y - this.node.y, x - this.node.x);
 };
@@ -959,7 +1164,16 @@ function StartLink(node, start, designer) {
   }
 }
 
+StartLink.prototype.connectedTo = function(node) {
+  return (this.node == node);
+}
+
 StartLink.prototype.setAnchorPoint = function(x, y) {
+
+  if(!this.node) {
+    return;
+  }
+
   this.deltaX = x - this.node.x;
   this.deltaY = y - this.node.y;
 
@@ -1322,27 +1536,11 @@ function resetCaret() {
   caretVisible = true;
 }
 
-/*
-
-function save_undo_point() {
-   
-}
-
-function undo() {
-
-    //If there's nothing on the undo stack, abort.
-    if(undo_stack.count == 0) {
-        return;
-    }
-
-}
-
-*/
 
 var designers = [];
 
 function redrawAll() {
-  for(var i = 0; i < designers.count; ++i) {
+  for(var i = 0; i < designers.length; ++i) {
     designers[i].draw();
   }
 }
@@ -1370,6 +1568,7 @@ function load_fonts() {
       })()
 }
 
+
 window.onload = function() {
 
     load_fonts();
@@ -1377,16 +1576,34 @@ window.onload = function() {
     //TODO: abstract to another file?
     canvas = document.getElementById('canvas');
     designer = new FSMDesigner(canvas);
-    designer.restoreBackup();
+    designer.recreateState();
     designer.draw();
     register_new_designer(designer);
 
+    //TOOD: abstract to another file
     document.getElementById('btnNew').onclick = function () { designer.clear() };
     document.getElementById('btnUndo').onclick = function () { designer.undo() };
     document.getElementById('btnRedo').onclick = function () { designer.redo() };
+
+    var options = {
+      swf: 'lib/downloadify.swf',
+      downloadImage: 'img/download.gif',
+      width: document.getElementById('btnSaveDummy').offsetWidth,
+      height: document.getElementById('btnSaveDummy').offsetHeight,
+      append: true,
+      transparent: true,
+      filename: 'FiniteStateMachine.jfsm',
+      data: function () { return designer.getDataToSave(); }
+    };
+
+    Downloadify.create('btnSave', options);
+    //document.getElementById('btnSaveDummy').style.marginRight = -1 * document.getElementById('btnSave').offsetWidth + "px";
+    document.getElementById('btnSaveDummy').style.zIndex = -100;
+    document.getElementById('btnSave').style.zIndex = 100;
+
+    //Fall back to HTML5 on systems that don't support Flash.
+    document.getElementById('btnSaveDummy').onclick = function () { designer.saveFileHTML5() };
 };
-
-
 
 
 function crossBrowserKey(e) {
