@@ -116,14 +116,16 @@ FSMDesigner.prototype.exportPNG = function() {
   this.selectedObject = null;
 
   //Capture a PNG from the canvas.
+  this.draw();
   var pngData = canvas.toDataURL('image/png');
-
-  //Reset the selection.
-  this.selectedObject = oldSelectedObject;
 
   //And send the image to be captured, in a new tab.
   window.open(pngData, '_blank');
   window.focus();
+
+  //Reset the selection.
+  this.selectedObject = oldSelectedObject;
+  this.draw();
 }
 
 /**
@@ -616,10 +618,7 @@ FSMDesigner.prototype.createBackup = function () {
 }
 
 FSMDesigner.prototype.recreateState = function (backup) {
-
-  console.log(backup);
-  console.log(typeof backup);
-
+  
   //If no backup was provided, try to restore the "local storage" copy.
   if(backup == null) {
     try {
@@ -696,10 +695,27 @@ FSMDesigner.prototype.recreateState = function (backup) {
 
 //FIXME remove
 function canvasHasFocus() {
+
+  //TODO: place me somewhere else; register a binding for this!
+  if(document.getElementById('helppanel').style.display == "block") {
+    return false;
+  }
+
   return (document.activeElement || document.body) == document.body;
 }
 
+//REDO THIS: generalize me
+FSMDesigner.prototype.dialogOpen = function () {
+  return (document.getElementById('helppanel').style.display == "block");
+}
+
 FSMDesigner.prototype.hasFocus = function () {
+
+  //TODO: place me somewhere else; register a binding for this!
+  if(document.getElementById('helppanel').style.display == "block") {
+    return false;
+  }
+
   //TODO: generalize?
   return (document.activeElement || document.body) == document.body;
 }
@@ -708,6 +724,12 @@ FSMDesigner.prototype.hasFocus = function () {
  * Handle mouse-up events.
  */
 FSMDesigner.prototype.handlemouseup = function(e) {
+
+    //Ignore the mouse when a dialog is open.
+    if(this.dialogOpen()) {
+      return;
+    }
+
     this.movingObject = false;
 
     if (this.currentLink != null) {
@@ -733,6 +755,12 @@ FSMDesigner.prototype.handlemouseup = function(e) {
   };
 
 FSMDesigner.prototype.handlemousemove = function(e) {
+
+    //Ignore the mouse when a dialog is open.
+    if(this.dialogOpen()) {
+      return;
+    }
+
     var mouse = crossBrowserRelativeMousePos(e);
 
     if (this.currentLink != null) {
@@ -822,6 +850,12 @@ FSMDesigner.prototype.handledoubleclick = function(e) {
  * Handle mouse-down events for the FSMDesigner. 
  */
 FSMDesigner.prototype.handlemousedown = function(e) {
+
+    //Ignore the mouse when a dialog is open.
+    if(this.dialogOpen()) {
+      return;
+    }
+
     var mouse = crossBrowserRelativeMousePos(e);
 
     this.selectedObject = this.selectObject(mouse.x, mouse.y);
@@ -1624,7 +1658,7 @@ function register_new_designer(designer) {
 function load_fonts() {
      //Load fonts before continuing...
      WebFontConfig = {
-        google: { families: [ 'Droid+Sans::latin' ] },
+        google: { families: [ 'Droid+Sans:400,700:latin' ] },
         active: function() { redrawAll(); }
         /* inactive: font_fallback */
       };
@@ -1668,6 +1702,8 @@ window.onload = function() {
     document.getElementById('btnUndo').onclick = function () { designer.undo() };
     document.getElementById('btnRedo').onclick = function () { designer.redo() };
 
+    window.onresize = function () { redrawAll(); };
+
     var options = {
       swf: 'lib/downloadify.swf',
       downloadImage: 'img/download.gif',
@@ -1675,7 +1711,7 @@ window.onload = function() {
       height: document.getElementById('btnSaveDummy').offsetHeight,
       append: true,
       transparent: true,
-      filename: 'FiniteStateMachine.jfsm',
+      filename: 'FiniteStateMachine.fsmd',
       data: function () { return designer.getDataToSave(); }
     };
 
@@ -1701,7 +1737,24 @@ window.onload = function() {
      * File export set-up.
      */ 
     document.getElementById('btnSavePNG').onclick = function() { designer.exportPNG(); };
+
+    /**
+     * Help buttons.
+     */ 
+    document.getElementById('btnHelp').onclick = function() { toggleHelp(); };
+    document.getElementById('btnDismissHelp').onclick = function() { document.getElementById('helppanel').style.display = "none"; };
+
+    //If we've never seen this "user" before, show the help splash.
+    if(localStorage['seenFSMDesigner'] == undefined) {
+      document.getElementById('btnHelp').click();
+      localStorage['seenFSMDesigner'] = 'yes';
+    }
 };
+
+function toggleHelp() {
+  var newStyle = (document.getElementById('helppanel').style.display == "block") ? "none" : "block";
+  document.getElementById('helppanel').style.display = newStyle;
+}
 
 
 function crossBrowserKey(e) {

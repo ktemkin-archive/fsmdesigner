@@ -10,7 +10,7 @@
         <script type="text/javascript" src="fsm.js"></script>
 </head>
 <body>
-    <div id="toolbar" unselectable="on">
+  <div id="toolbar">
         <button id="btnNew" class="toolbutton icon-bolt"> New</button>
         <span class="seperator">|</span>
 
@@ -22,7 +22,7 @@
         <button id="btnOpen" class="toolbutton icon-folder-open"> Open</button>
         
         <span class="seperator">|</span>
-        <button id="btnSavePNG" class="toolbutton icon-picture"> Export Image</button>
+        <button id="btnSavePNG" class="toolbutton icon-picture"> Create Image</button>
 
 
         <span class="seperator">|</span>
@@ -30,12 +30,36 @@
         <button id="btnRedo" class="toolbutton icon-repeat"> Redo</button>
 
         <span class="seperator">|</span>
-        <button class="toolbutton icon-question-sign"> How to Use</button>
+        <button id="btnHelp" class="toolbutton icon-question-sign"> What do I do?</button>
+
+        <div class="logo"><strong>FSM</strong>Designer <span class="logobeta">beta</span></div>
     </div>
+    
     <canvas id="canvas">
         <span class="unsupported">Your browser does not support<br>the HTML5 &lt;canvas&gt; element</span>
     </canvas>
+
+
+    <div id="helppanel">
+        <h1>This'll be <em>easy</em>.</h1>
+
+        Welcome to <strong>FSM</strong>Designer; a web-based tool for <em>Finite State Machine</em> entry. Capturing a Finite State Machine is easy! Just use the following controls:
+        <ul>
+          <li><strong>Double click</strong> any blank space to create a new <em>state</em>.</li>
+          <li><strong>Single click</strong> any existing <em>state</em> to edit its name.</li>
+          <li><strong>Double click</strong> any existing <em>state</em> to edit its output or outputs!.</li>
+          <li><strong><span class="keyname">Shift</span> + drag</strong> to add a new <em>state transition</em>.</li>
+        </ul>
+        Relax, and enjoy the FSM entry- <strong>FSM</strong>Designer has your back! <br /> 
+        If you're using a modern browser, your work is constantly autosaved- so you're safe even if your browser crashes, or you accidentally navigate away.
+        
+        <div id="divDismissHelp">
+          <button id="btnDismissHelp">Let's get started!</button>
+        </div>
+    </div>
+
+
     <div id="staging">
-      <input type="file" id="fileOpen" accept=".jfsm" />
+      <input type="file" id="fileOpen" accept=".fsmd" />
     </div>
 </body></html>
