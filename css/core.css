@@ -26,7 +26,6 @@ h1 {
     left: 0px;
     right: 0px;
     padding: 8px;
-    padding-top: 0px;
 
     background: rgb(238,238,238); /* Old browsers */
     background: -moz-linear-gradient(top,  rgba(238,238,238,1) 0%, rgba(204,204,204,1) 100%); /* FF3.6+ */

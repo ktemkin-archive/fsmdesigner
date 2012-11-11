@@ -64,16 +64,17 @@ function FSMDesigner(canvas) {
   this.modalBehavior = FSMDesigner.ModalBehaviors.POINTER;
   
   //Register the events associated with the given FSM designer.
-  var activeFSM = this;
-  this.canvas.onmousedown = function(e) { activeFSM.handlemousedown(e); };
-  this.canvas.ondblclick = function(e) { activeFSM.handledoubleclick(e); };
-  this.canvas.onmousemove = function(e) { activeFSM.handlemousemove(e); };
-  this.canvas.onmouseup = function(e) { activeFSM.handlemouseup(e); };
+  var _this = this;
+  this.canvas.onmousedown = function(e) { _this.handlemousedown(e); };
+  this.canvas.ondblclick = function(e) { _this.handledoubleclick(e); };
+  this.canvas.onmousemove = function(e) { _this.handlemousemove(e); };
+  this.canvas.onmouseup = function(e) { _this.handlemouseup(e); };
+  this.canvas.addEventListener('drop', function(e) { _this.handledrop(e) }, false);
 
   //FIXME: replace these with addEventListener
-  document.onkeypress = function(e) { activeFSM.handlekeypress(e) };
-  document.onkeydown = function(e) { activeFSM.handlekeydown(e) };
-  document.onkeyup = function(e) { activeFSM.handlekeyup(e) };
+  document.onkeypress = function(e) { _this.handlekeypress(e) };
+  document.onkeydown = function(e) { _this.handlekeydown(e) };
+  document.onkeyup = function(e) { _this.handlekeyup(e) };
 }
 
 FSMDesigner.ModalBehaviors = {
@@ -90,6 +91,42 @@ FSMDesigner.KeyCodes = {
   z: 122,
   Z: 90
 }
+
+FSMDesigner.prototype.handledrop = function(e) {
+
+  e.stopPropagation();
+  e.preventDefault();
+
+  console.log('drop intercepted');
+
+  if(e.dataTransfer.files.length != 1) {
+    return;
+  }
+
+  //Load the system state from the dropped file.
+  this.loadFromFile(e.dataTransfer.files[0]);
+
+}
+
+/**
+ *  Load a FSM diagram from the file specified.
+ */
+FSMDesigner.prototype.loadFromFile = function(file) {
+
+  console.log('attempting to load from file')
+
+  this.saveUndoStep();
+
+  //Create a new FileReader object...
+  var reader = new FileReader();
+
+  //And use it to read the file's contents.
+  var _this = this;
+  reader.onload = function(file) { _this.recreateState(file.target.result); };
+  reader.readAsText(file);
+
+}
+
 
 /**
  *  Determines if two designer "undo" states are equivalent.
@@ -562,6 +599,9 @@ FSMDesigner.prototype.createBackup = function () {
 
 FSMDesigner.prototype.recreateState = function (backup) {
 
+  console.log(backup);
+  console.log(typeof backup);
+
   //If no backup was provided, try to restore the "local storage" copy.
   if(backup == null) {
     try {
@@ -577,6 +617,16 @@ FSMDesigner.prototype.recreateState = function (backup) {
     } catch(e) {
       localStorage['fsm'] = '';
     }
+  }
+
+  //If we were given a string, interpret it as a JSON string.
+  if(typeof backup == 'string') {
+    try {
+      backup = JSON.parse(backup);
+    }
+    catch(e) {}
+
+    console.log(backup);
   }
 
   if(!backup) {
@@ -621,6 +671,9 @@ FSMDesigner.prototype.recreateState = function (backup) {
       this.links.push(link);
     }
   }
+
+  //Draw the newly-reconstructed state.
+  this.draw();
 }
 
 //FIXME remove
@@ -1568,6 +1621,18 @@ function load_fonts() {
       })()
 }
 
+function handleOpen(designer, e) {
+  
+  //If we didn't get exactly one file, abort.
+  if(e.target.files.length != 1) {
+    return;
+  }
+
+  //Open the file, and import its result.
+  designer.loadFromFile(e.target.files[0]); 
+
+}
+
 
 window.onload = function() {
 
@@ -1596,6 +1661,10 @@ window.onload = function() {
       data: function () { return designer.getDataToSave(); }
     };
 
+    /** 
+     * File save/download set-up.
+     */
+
     Downloadify.create('btnSave', options);
     //document.getElementById('btnSaveDummy').style.marginRight = -1 * document.getElementById('btnSave').offsetWidth + "px";
     document.getElementById('btnSaveDummy').style.zIndex = -100;
@@ -1603,6 +1672,12 @@ window.onload = function() {
 
     //Fall back to HTML5 on systems that don't support Flash.
     document.getElementById('btnSaveDummy').onclick = function () { designer.saveFileHTML5() };
+
+    /**
+     * File open set-up.
+     */
+    document.getElementById('btnOpen').onclick = function () { document.getElementById('fileOpen').click(); };
+    document.getElementById('fileOpen').onchange = function(e) { handleOpen(designer, e); };
 };
 
 
