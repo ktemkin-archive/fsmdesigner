@@ -771,7 +771,7 @@ FSMDesigner.prototype.handlemousemove = function(e) {
 
       if (this.selectedObject == null) {
         if (targetNode != null) {
-          this.currentLink = new StartLink(this.targetNode, this.originalClick, this);
+          this.currentLink = new StartLink(targetNode, this.originalClick, this);
         } else {
           this.currentLink = new TemporaryLink(this.originalClick, mouse);
         }
@@ -1200,7 +1200,7 @@ SelfLink.prototype.setAnchorPoint = function(x, y) {
   // snap to 90 degrees
   var snap = Math.round(this.anchorAngle / (Math.PI / 2)) * (Math.PI / 2);
   if (Math.abs(this.anchorAngle - snap) < 0.1) this.anchorAngle = snap;
-  // keep in the range -pi to pi so our containsPoint() function always works
+  // keep in the range -pi to pi so our containsPoint() function always works 
   if (this.anchorAngle < -Math.PI) this.anchorAngle += 2 * Math.PI;
   if (this.anchorAngle > Math.PI) this.anchorAngle -= 2 * Math.PI;
 };
@@ -1304,6 +1304,12 @@ StartLink.prototype.getEndPoints = function() {
 };
 
 StartLink.prototype.draw = function(c) {
+
+  //If we're not connected to a node, abort!
+  if(!this.node) {
+    return;
+  }
+  
   var stuff = this.getEndPoints();
 
   Link.applySelectColors(this, c);
@@ -1316,13 +1322,19 @@ StartLink.prototype.draw = function(c) {
 
   // draw the text at the end without the arrow
   var textAngle = Math.atan2(stuff.startY - stuff.endY, stuff.startX - stuff.endX);
-  drawText(c, this.text, stuff.startX, stuff.startY, textAngle, selectedObject == this, linkFont);
+  drawText(c, this.text, stuff.startX, stuff.startY, textAngle, this.parent.selectedObject == this, this.linkFont);
 
   // draw the head of the arrow
   drawArrow(c, stuff.endX, stuff.endY, Math.atan2(-this.deltaY, -this.deltaX));
 };
 
 StartLink.prototype.containsPoint = function(x, y) {
+
+  //If we don't have a node, then we can't have any points.
+  if(!this.node) {
+    return false;
+  }
+
   var stuff = this.getEndPoints();
   var dx = stuff.endX - stuff.startX;
   var dy = stuff.endY - stuff.startY;
