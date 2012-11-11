@@ -538,9 +538,13 @@ FSMDesigner.prototype.drawUsing = function (c) {
 FSMDesigner.prototype.draw = function () {
   var context = this.canvas.getContext('2d');
 
+
+
   //TODO extract me to somewhere else
   context.canvas.width = window.innerWidth;
   context.canvas.height = window.innerHeight - document.getElementById("toolbar").offsetHeight;;
+  context.canvas.style.width = window.innerWidth;
+  context.canvas.style.height = window.innerHeight;
 
   //Perform the core modification...
   this.drawUsing(context);
@@ -695,24 +699,14 @@ FSMDesigner.prototype.recreateState = function (backup) {
 
 //FIXME remove
 function canvasHasFocus() {
-
-  //TODO: place me somewhere else; register a binding for this!
-  if(document.getElementById('helppanel').style.display == "block") {
-    return false;
-  }
-
   return (document.activeElement || document.body) == document.body;
 }
 
-//REDO THIS: generalize me
-FSMDesigner.prototype.dialogOpen = function () {
-  return (document.getElementById('helppanel').style.display == "block");
-}
 
 FSMDesigner.prototype.hasFocus = function () {
 
   //TODO: place me somewhere else; register a binding for this!
-  if(document.getElementById('helppanel').style.display == "block") {
+  if(document.getElementById('helppanel').style.visibility == "visible") {
     return false;
   }
 
@@ -753,6 +747,11 @@ FSMDesigner.prototype.handlemouseup = function(e) {
       this.draw();
     }
   };
+
+FSMDesigner.prototype.dialogOpen = function() {
+  return document.getElementById('helppanel').style.visibility == "visible";
+}
+
 
 FSMDesigner.prototype.handlemousemove = function(e) {
 
@@ -821,6 +820,10 @@ FSMDesigner.prototype.handleSnap = function() {
  * Double-click handler for the FSM Designer.
  */
 FSMDesigner.prototype.handledoubleclick = function(e) {
+
+  //TODO: abstract to event queue
+  handleModalBehavior();
+
   var mouse = crossBrowserRelativeMousePos(e);
   this.selectedObject = this.selectObject(mouse.x, mouse.y);
   this.textEnteredRecently = false;
@@ -1754,7 +1757,7 @@ window.onload = function() {
      * Help buttons.
      */ 
     document.getElementById('btnHelp').onclick = function() { toggleHelp(); };
-    document.getElementById('btnDismissHelp').onclick = function() { document.getElementById('helppanel').style.display = "none"; };
+    document.getElementById('btnDismissHelp').onclick = function() { toggleHelp(); };
 
     //If we've never seen this "user" before, show the help splash.
     if(localStorage['seenFSMDesigner'] == undefined) {
@@ -1764,8 +1767,23 @@ window.onload = function() {
 };
 
 function toggleHelp() {
-  var newStyle = (document.getElementById('helppanel').style.display == "block") ? "none" : "block";
-  document.getElementById('helppanel').style.display = newStyle;
+  var panel = document.getElementById('helppanel');
+
+  if(panel.style.visibility == "visible") {
+    panel.style.opacity = 0;
+    setTimeout(function() { panel.style.visibility = "hidden" }, 0.2 * 1000);
+  } else {
+    panel.style.visibility = "visible";
+    panel.style.opacity = 1;
+  }
+
+}
+
+//FIXME
+function handleModalBehavior() {
+  if(document.getElementById('helppanel').style.visibility == "visible") {
+    toggleHelp();
+  }
 }
 
 
