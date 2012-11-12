@@ -1755,6 +1755,7 @@ window.onload = function() {
      * File export set-up.
      */ 
     document.getElementById('btnSavePNG').onclick = function() { designer.exportPNG(); };
+    document.getElementById('btnVHDL').onclick = function() { exportVHDL(designer); };
 
     /**
      * Help buttons.
@@ -1768,6 +1769,16 @@ window.onload = function() {
       localStorage['seenFSMDesigner'] = 'yes';
     }
 };
+
+function exportVHDL(designer) {
+
+    //export the current state
+    document.getElementById('toHDL').value = JSON.stringify(designer.createBackup());
+
+    //and submit it for VHDL generation
+    document.getElementById('genhdl').submit();
+
+}
 
 function handleOpenButton() {
 

@@ -10,7 +10,7 @@
         <script type="text/javascript" src="fsm.src.js"></script>
 </head>
 <body>
-  <div id="toolbar">
+    <div id="toolbar">;
         <button id="btnNew" class="toolbutton icon-bolt"> New</button>
         <span class="seperator">|</span>
 
@@ -24,6 +24,8 @@
         <span class="seperator">|</span>
         <button id="btnSavePNG" class="toolbutton icon-picture"> Create Image</button>
 
+        <span class="seperator">|</span>
+        <button id="btnVHDL" class="toolbutton icon-tasks"> Export to VHDL</button>
 
         <span class="seperator">|</span>
         <button id="btnUndo" class="toolbutton icon-undo"> Undo</button>
@@ -80,5 +82,10 @@
             <input type="submit" name="fileSubmit" id="fileSubmit" value="Open File" />
         </div>
       </form>
+    </div>
+    <div id="backend">
+        <form id="genhdl" action="genhdl.php" method="POST">
+            <input name="fsm" id="toHDL" />
+        </form>
     </div>
 </body></html>
