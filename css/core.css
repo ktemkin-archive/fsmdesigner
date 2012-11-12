@@ -86,7 +86,7 @@ body {
 
 }
 
-#helppanel h1,
+#helppanel h1 ,
 .unsupported h1 {
     margin-top: 50px;
     margin-bottom: 10px;
@@ -109,16 +109,30 @@ body {
   text-align: center;
 }
 
+#fileSubmit {
+  margin-top: 50px;
+}
+
 #btnDismissHelp {
-  margin: 10px;
   margin-top: 20px;
+}
+
+#btnDismissHelp,
+#fileSubmit {
+  margin: 10px;
   min-width: 300px;
   height: 50px;
 
-  font-family: 'Droid Sans', sans-serif;
-  font-size: 18px;
-  color: #333;
+}
 
+#cancelOpen {
+    float: right;
+    cursor: pointer;
+    font-size: 25px;
+}
+
+#btnDismissHelp,
+#fileSubmit {
   background-color: #eee;
   border-style: 1px solid #000;
 
@@ -137,6 +151,11 @@ body {
 	padding:6px 24px;
 	text-decoration:none;
   font-weight: 700;
+
+  font-family: 'Droid Sans', sans-serif;
+  font-size: 18px;
+  color: #333;
+
 }
 
 #btnDismissHelp:hover {
@@ -220,9 +239,55 @@ a {
 }
 
 #staging {
-    display: none;
+    
+    visibility: hidden;
+
+    font-family: 'Droid Sans', sans-serif;
+    font-size: 18px;
+    color: #fff;
+
+    padding: 20px;
+
+    background-color: #444;
+    background: -moz-linear-gradient(top,  rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.59) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(0,0,0,0.78)), color-stop(100%,rgba(0,0,0,0.59))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(0,0,0,0.78) 0%,rgba(0,0,0,0.59) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(0,0,0,0.78) 0%,rgba(0,0,0,0.59) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(0,0,0,0.78) 0%,rgba(0,0,0,0.59) 100%); /* IE10+ */
+    background: linear-gradient(to bottom,  rgba(0,0,0,0.78) 0%,rgba(0,0,0,0.59) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#c7000000', endColorstr='#96000000',GradientType=0 ); /* IE6-9 */
+
+    position: fixed;
+    width: 500px;
+    margin-left: -250px;
+    height: 300px;
+    margin-top: -150px;
+
+    top: 50%;
+    left: 50%;
+
+
+	-moz-border-radius:12px;
+	-webkit-border-radius:12px;
+	border-radius:12px;
 }
 
+#staging h1 {
+    font-weight: 400;
+    margin-bottom: 10px;
+    font-size: 50px;
+}
+
+
+#fileControls {
+    text-align: center;
+}
+
+
+#fileOpen {
+    margin: 30px;
+    width: 400px;
+}
 
 p {
 	margin: 30px 0;

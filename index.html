@@ -7,7 +7,7 @@
         <link href='css/icons.css' rel='stylesheet' type='text/css'>
         <script type="text/javascript" src="lib/downloadify.min.js"></script>
         <script type="text/javascript" src="lib/swfobject.js"></script>
-        <script type="text/javascript" src="fsm.js"></script>
+        <script type="text/javascript" src="fsm.src.js"></script>
 </head>
 <body>
   <div id="toolbar">
@@ -41,6 +41,8 @@
           <h1>Bummer!</h1>
 
           It looks like your browser doesn't provide the tools we need to get working. Don't worry too much! <br/><br /> You can always install a newer, better version of your current browser- or choose a standards-compliant browser like <a href="http://www.google.com/chrome">Chrome</a> or <a href="http://www.firefox.com">Firefox</a>!
+
+          </div>
           
     </canvas>
 
@@ -64,8 +66,17 @@
         </div>
     </div>
 
-
     <div id="staging">
-      <input type="file" id="fileOpen" accept=".fsmd" />
+      <i id="cancelOpen" class="icon-remove-sign"></i>
+      <form id="openform" action="iehelper.php" method="post" enctype="multipart/form-data">
+        <h1>Select a file:</h1>
+        Use the controls below to select the file you'd like to open: <br />
+        <div id="fileControls">
+            <div id="fileOpenControl">
+                <input type="file" name="fileOpen" id="fileOpen" accept=".fsmd" /><br />
+            </div>
+            <input type="submit" name="fileSubmit" id="fileSubmit" value="Open File" />
+        </div>
+      </form>
     </div>
 </body></html>

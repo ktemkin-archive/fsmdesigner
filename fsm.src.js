@@ -97,8 +97,6 @@ FSMDesigner.prototype.handledrop = function(e) {
   e.stopPropagation();
   e.preventDefault();
 
-  console.log('drop intercepted');
-
   if(e.dataTransfer.files.length != 1) {
     return;
   }
@@ -132,8 +130,6 @@ FSMDesigner.prototype.exportPNG = function() {
  *  Load a FSM diagram from the file specified.
  */
 FSMDesigner.prototype.loadFromFile = function(file) {
-
-  console.log('attempting to load from file')
 
   this.saveUndoStep();
 
@@ -646,8 +642,6 @@ FSMDesigner.prototype.recreateState = function (backup) {
       backup = JSON.parse(backup);
     }
     catch(e) {}
-
-    console.log(backup);
   }
 
   if(!backup) {
@@ -1688,8 +1682,17 @@ function load_fonts() {
       })()
 }
 
+function manualOpenFallback() {
+    document.getElementById('staging').style.visibility = 'visible';
+}
+
 function handleOpen(designer, e) {
-  
+
+  //If we can't read files ourselves, ignore any change in this file's value.
+  if(typeof(FileReader) == 'undefined') {
+    return;
+  }
+
   //If we didn't get exactly one file, abort.
   if(e.target.files.length != 1) {
     return;
@@ -1745,8 +1748,9 @@ window.onload = function() {
     /**
      * File open set-up.
      */
-    document.getElementById('btnOpen').onclick = function () { document.getElementById('fileOpen').click(); };
+    document.getElementById('btnOpen').onclick = function () { handleOpenButton(); };
     document.getElementById('fileOpen').onchange = function(e) { handleOpen(designer, e); };
+    document.getElementById('cancelOpen').onclick = function() { closeOpenDialog(); };
 
     /**
      * File export set-up.
@@ -1766,6 +1770,18 @@ window.onload = function() {
     }
 };
 
+function handleOpenButton() {
+
+  //If we have access to HTML5's file upload capabilities, use them to handle the file on the client-side.
+  if(typeof(FileReader) != 'undefined') {
+    document.getElementById('fileOpen').click(); 
+  }
+  //Otherwise, shown an "open" form.
+  else {
+    manualOpenFallback(); 
+  }
+}
+
 function toggleHelp() {
   var panel = document.getElementById('helppanel');
 
@@ -1779,10 +1795,18 @@ function toggleHelp() {
 
 }
 
+function closeOpenDialog() {
+    var dialog = document.getElementById('staging');
+    dialog.style.visibility = "hidden";
+}
+
 //FIXME
 function handleModalBehavior() {
   if(document.getElementById('helppanel').style.visibility == "visible") {
     toggleHelp();
+  }
+  if(document.getElementById('staging').style.visibility == "visible") {
+    closeOpenDialog();
   }
 }
 
