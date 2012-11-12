@@ -538,9 +538,9 @@ FSMDesigner.prototype.draw = function () {
 
   //TODO extract me to somewhere else
   context.canvas.width = window.innerWidth;
-  context.canvas.height = window.innerHeight - document.getElementById("toolbar").offsetHeight;;
+  context.canvas.height = window.innerHeight - document.getElementById("toolbar").offsetHeight;
   context.canvas.style.width = window.innerWidth + 'px';
-  context.canvas.style.height = window.innerHeight + 'px';
+  context.canvas.style.height = (window.innerHeight - document.getElementById('toolbar').offsetHeight) + 'px';
 
   //Perform the core modification...
   this.drawUsing(context);
@@ -1668,7 +1668,7 @@ function load_fonts() {
      //Load fonts before continuing...
      WebFontConfig = {
         google: { families: [ 'Droid+Sans:400,700:latin' ] },
-        active: function() { redrawAll(); }
+        active: function() { redrawAll(); setTimeout(redrawAll, 1000); }
         /* inactive: font_fallback */
       };
       (function() {
@@ -1702,7 +1702,6 @@ function handleOpen(designer, e) {
   designer.loadFromFile(e.target.files[0]); 
 
 }
-
 
 window.onload = function() {
 
