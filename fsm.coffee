@@ -164,8 +164,9 @@ class FSMDesigner
     #redraw, if appropriate
     @draw() unless no_redraw
 
-
+  #
   #Exports the currently designed FSM to a PNG image.
+  #
   export_png: ->
 
     #temporarily deselect the active element, so it doesn't show up as higlighted in
@@ -185,6 +186,9 @@ class FSMDesigner
     @selected = temp_selected
     @draw()
 
+  #
+  # Finds the object at the given x,y position on the canvas.
+  #
   find_object_at_position: (x, y) ->
 
     #first, look for a transition at the given position
@@ -200,9 +204,10 @@ class FSMDesigner
     #if we didn't find either a matching link or node, return null
     null
 
-
+  #
   #Handle HTML5 file drop events; this allows the user to drag a file into the designer,
   #loading their FSM.
+  #
   handle_drop: (e) ->
 
     #prevent the browser from trying to load/display the file itself
@@ -214,6 +219,67 @@ class FSMDesigner
 
     #load the recieved file
     @load_from_file(e.dataTransfer.files[0])
+
+  #Handle the backspace key.
+  handle_backspace: ->
+    
+    #if we're in output mode, remove the last character from the output
+    if @inOutputMode and @selected.outputs
+      @selected.outputs = @selected.outputs[0...-1]
+
+    #otherwise, remove the last character from the object's text
+    else if @selected.text
+      @selected.text = @selected.text[0...-1]
+
+
+  #Handle keypresses on the FSM Designer.
+  handle_keydown: (e) ->
+
+    #get the keycode of the key that triggered this handler
+    key = cross_browser_key(e)
+
+    #if the user has just pressed the shift key, switch modes accordingly
+    if key is FSMDesigner.KeyCodes.SHIFT
+      @modalBehavior = FSMDesigner.ModalBehaviors.CREATE
+      
+    #if the designer doesn't have focus, then abort
+    return unless @hasFocus()
+
+    #if the key was the backspace key
+    if key is FSMDesigner.KeyCodes.BACKSPACE
+
+      #save an undo step, if necessary
+      @handle_text_undo_step()
+
+      #handle the backspace key for the selecetd item
+      @handle_backspace()
+
+      #update the position of the caret, and re-draw
+      @reset_caret()
+      @draw()
+
+      #return false, indicating that the browser should not perform the normal
+      #"back" action
+      return false
+
+    #if the user has pressed delete, deleted the selected object
+    if key is FSMDesigner.KeyCodes.DELETE
+      @delete_object(@selected)
+
+
+  #Handle key-releases on the FSM Designer.
+  handle_keyup: (e) ->
+
+    #get the keycode of the key that triggered this event
+    key = cross_browser_key(e)
+
+    #if the event was the shift key being released, switch back to normal "pointer" mode
+    if key is FSMDesigner.KeyCodes.SHIFT
+      @modalBehavior = FSMDesigner.ModalBehaviors.POINTER
+
+  handle_text_undo_step: ->
+
+    cancel_timeout = => 
 
 
   #Loads a file from an HTML5 file object

@@ -254,6 +254,31 @@
       return this.load_from_file(e.dataTransfer.files[0]);
     };
 
+    FSMDesigner.prototype.handle_backspace = function() {
+      if (this.inOutputMode && this.selected.outputs) {
+        return this.selected.outputs = this.selected.outputs.slice(0, -1);
+      } else if (this.selected.text) {
+        return this.selected.text = this.selected.text.slice(0, -1);
+      }
+    };
+
+    FSMDesigner.prototype.handle_keydown = function(e) {
+      var key;
+      key = cross_browser_key(e);
+      if (key === FSMDesigner.KeyCodes.SHIFT) {
+        this.modalBehavior = FSMDesigner.ModalBehaviors.CREATE;
+      }
+      if (!this.hasFocus()) {
+        return;
+      }
+      if (key === FSMDesigner.KeyCodes.BACKSPACE) {
+        this.handle_text_undo_step();
+        this.handle_backspace();
+        this.reset_caret();
+        return this.draw();
+      }
+    };
+
     FSMDesigner.prototype.load_from_file = function(file) {
       var reader;
       this.save_undo_step();
