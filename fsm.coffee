@@ -1,4 +1,8 @@
 ###
+  
+ [Hey, this is CoffeeScript! If you're looking for the original source,
+  look in "fsm.coffee", not "fsm.js".]
+
  Finite State Machine Designer
  portions Copyright (c) Binghamton University,
  author: Kyle J. Temkin <ktemkin@binghamton.edu>
@@ -100,6 +104,14 @@ class FSMDesigner
     z: 122,
     Z: 90
 
+  autosave: ->
+
+    #if we don't have one of the needed components, don't autosave
+    return unless localStorage? and JSON?
+
+    #autosave a serializatin of the current FSM
+    localStorage['fsm'] = @serialize()
+
   #Clears the entire canvas, starting a "new" FSM diagram.
   clear: (no_save) ->
     
@@ -115,8 +127,128 @@ class FSMDesigner
     #and redraw
     @draw()
 
+  #
+  # Creates a new state at the given x, y location.
+  #
+  create_state_at_location: (x, y) ->
 
+    #save the system's state before the creation of the new node
+    @save_undo_step()
+
+    #create a new state, and select it
+    @selected = new State(x, y, @)
+
+    #add the new state to our internal collection of states
+    @states.push(@selected)
+
+    #reset the text entry caret
+    @reset_caret()
+
+    #draw the FSM with the new state
+    @draw()
+
+
+
+  #
+  # Creates a visual cue, indicating the position of a transition that's
+  # currently being created.
+  #
+  create_transition_cue: (mouse) ->
+
+      #find the object under the mouse
+      target_state = @find_state_at_position(mouse.x, mouse.y)
+
+      #if we have a selected state to act as our origin
+      if @selected?
+
+        @current_transition = 
+          #if the target state is currently selected, then create a self-loop from the state to itself
+          if target_state is @selected new SelfTransition(@selected, mouse, @)
+
+          #otherwise, if have a target state, create a new transition going _to_ that state
+          else if target_state? new Transition(@selected, target_state, @)
+
+          #otherwise, create a new temporary link, which creates a visual queue, and which "points" at the mouse pointer
+          else new TemporaryTransition(@selected.closest_point_on_circle(mouse.x, mouse.y), mouse, @)
+
+      #otherwise, this must be reset arc
+      else
+
+        @current_transition = 
+          #if we have a target state, create a reset arc pointing to the target from the site of the original click
+          if target_state? new ResetTransition(target_state, @original_click, @)
+
+          #otherwise, create a temporary transition from the site of the original click to the site of the mouse pointer
+          else new TemporaryTransition(@original_click, mouse)
+      
+      #re-draw the FSM, including the newly-created in-progress node
+      @draw()
+
+  #
+  #Returns a "dehydration" (value-based typeless copy) of the FSMDesigner's current state.
+  #
+  dehydrate: ->
+
+    #create a new, empty object to store the designer's state
+    designer_state =
+      states: (@dehydrate_state(s) for s in @states)
+      transitions: (@dehydrate_transition(t) for t in @transitions)
+
+    #return the cloned state
+    designer_state
+
+  #
+  # Creates a typeless copy of a given state, which is prime for saving.
+  #
+  dehydrate_state: (state) ->
+
+    #Extract only the relevant parts of the state.
+    dehydrated =
+      x: state.x
+      y: state.y
+      text: state.text
+      outputs: state.outputs
+      is_accept_state: state.is_accept_state
+      radius: radius
+
+    return dehydrated
+
+  #
+  # Creates a typeless copy of a given transition in a format prime for loading/saving.
+  #
+  dehydrate_transition: (transition) ->
+
+    #Extract the relevant parts of the transition.
+    if transition instanceof SelfTransition
+      dehydrated =
+        type: 'SelfTransition'
+        state: @states.indexOf(transition.state)
+        text: transition.text
+        anchor_angle: state.anchor_angle
+
+    else if transition instanceof ResetTransition
+      dehydrated =
+        type: 'ResetTransition'
+        states: @states.indexOf(transition.state)
+        text: transition.text
+        delta_x: transition.delta_x
+        delta_y: transition.delta_y
+
+    else if transition instanceof Transition
+      dehydrated =
+        type: 'Transition'
+        source: @states.indexOf(transition.source)
+        destination: @states.indexOf(transition.destination)
+        line_angle_adjustment: transition.line_angle_adjustment
+        parallel_part: transition.parallel_part
+        perpendicular_part: transition.perpendicular_part
+
+    #return the dehydrated transition
+    dehydrated
+
+  #
   #Deletes the specified object.
+  #
   delete: (obj) ->
     @delete_state obj
     @delete_transition obj
@@ -164,6 +296,40 @@ class FSMDesigner
     #redraw, if appropriate
     @draw() unless no_redraw
 
+  draw: ->
+    #get the canvas's 2D drawing "context"
+    context = @canvas.getContext('2d')
+
+    #use it to render the FSM
+    @draw_using(context)
+
+    #and autosave the FSM
+    @autosave
+
+  #
+  #Renders the given FSM using the provided "context", 
+  #the base rendering tool for HTMl5 canvases.
+  #
+  draw_using: (context) ->
+    
+    #clear the entire canvas
+    context.clearRect(0, 0, @canvas.width, @canvas.height);
+
+    #save the context's current settings
+    context.save()
+    context.translate(0.5, 0.5)
+
+    #draw each of the states and transitions in the FSM
+    state.draw_using(context) for state in @states
+    transition.draw_using(context) for transition in @transitions
+
+    #if have a link in the process of being drawn, render it
+    @currentTransition?.draw_using(context)
+
+    #and restore the original settings
+    context.restore()
+    
+
   #
   #Exports the currently designed FSM to a PNG image.
   #
@@ -188,20 +354,36 @@ class FSMDesigner
 
   #
   # Finds the object at the given x,y position on the canvas.
+  # Preference is given to states.
   #
   find_object_at_position: (x, y) ->
+    @find_transition_at_position(x, y) or @find_state_at_position(x, y)
+
+
+  #
+  # Finds the state at the given position, or returns null if none exists.
+  # 
+  find_state_at_position: (x, y) ->
+    
+    #next, check for a node at the given position
+    for state in @states
+      if state.contains_point(x, y)
+        return state
+
+    #if we couldn't find one, return null
+    null
+
+  #
+  # Finds the transition at the given position, or returns null if none exists.
+  #
+  find_transition_at_position: (x, y) ->
 
     #first, look for a transition at the given position
     for transition in @transitions
       if transition.contains_point(x,y)
         return transition
 
-    #next, check for a node at the given position
-    for state in @states
-      if state.contains_point(x, y)
-        return state
-    
-    #if we didn't find either a matching link or node, return null
+    #if we couldn't find one, return null
     null
 
   #
@@ -232,6 +414,37 @@ class FSMDesigner
       @selected.text = @selected.text[0...-1]
 
 
+  handle_doubleclick: (e) ->
+
+    #TODO: handle modal behavior in event queue
+    handle_modal_behavior()
+
+    #get the mouse's position relative to the canvas
+    mouse = cross_browser_relative_mouse_position(e)
+
+    #select the object at the given position
+    @selected = @find_object_at_position(mouse.x, mouse.y)
+
+    #as we've now selected a different object, reset the text undo timer
+    @reset_text_extry()
+
+    #exit output entry mode
+    @in_output_mode = false
+
+    #if we don't have a currently selected object, create a new state at the current location
+    if not @selected?
+      @create_state_at_location(mouse.x, mouse.y)
+
+    #otherwise, if we're clicking on a State
+    else if @selected instanceof State
+      @in_output_mode = true
+    
+    #draw the updated FSM
+    @draw()
+
+    #TODO: prevent text selection in chrome?
+
+
   #Handle keypresses on the FSM Designer.
   handle_keydown: (e) ->
 
@@ -249,7 +462,7 @@ class FSMDesigner
     if key is FSMDesigner.KeyCodes.BACKSPACE
 
       #save an undo step, if necessary
-      @handle_text_undo_step()
+      @save_text_undo_step()
 
       #handle the backspace key for the selecetd item
       @handle_backspace()
@@ -266,8 +479,37 @@ class FSMDesigner
     if key is FSMDesigner.KeyCodes.DELETE
       @delete_object(@selected)
 
+  #
+  #Handle key-press events- which are composed of both a key-down and a key-up.
+  #
+  handle_keypress: (e) ->
+    
+    #if this designer doesn't have focus, ignore the keypress
+    return unless @has_focus()
 
+    #get the keycode of the key that triggered this event
+    key = cross_browser_key(e)
+
+    #if we have a printable key, handle text entry
+    if FSMDesigner.keypress_is_printable(e) 
+      @handle_text_entry(key)
+      return false
+
+    if FSMDesigner.keypress_represents_undo(e)
+      @undo()
+      return false
+
+    if FSMDesigner.keypress_represents_redo(e)
+      @redo()
+      return false
+
+    if key is FSMDesigner.KeyCodes.BACKSPACE
+      return false
+
+
+  #
   #Handle key-releases on the FSM Designer.
+  #
   handle_keyup: (e) ->
 
     #get the keycode of the key that triggered this event
@@ -277,9 +519,176 @@ class FSMDesigner
     if key is FSMDesigner.KeyCodes.SHIFT
       @modalBehavior = FSMDesigner.ModalBehaviors.POINTER
 
-  handle_text_undo_step: ->
+  #
+  # Handle mouse-down ("click") events.
+  #
+  handle_mousedown: (e) ->
 
-    cancel_timeout = => 
+    #if there's a dialog open, ignore mouse clicks
+    return if @dialog_open
+
+    #get the mouse position, relative to the canvas
+    mouse = cross_browser_relative_mouse_position(e)
+
+    #reset the current modal flags:
+    @moving_object = false
+    @in_output_mode = false
+    @original_click = false
+    @reset_text_extry()
+
+    #find an object at the given position, if one exists
+    @selected = @find_object_at_position(mouse.x, mouse.y)
+
+    #if we've just selected an object
+    if @selected?
+
+      #if we've selected a state, and we're in transition creation mode, create a new self-link
+      if @modal_behavior = FSMDesigner.ModalBehaviors.CREATE and @selected instanceof State
+        @current_link = new SelfTransition(@selected, mouse, @)
+
+      #otherwise, if we're in pointer mode, move into "state movement" mode
+      else if @modal_behavior = FSMDesigner.ModalBehaviors.POINTER
+
+        @save_undo_step()
+
+        @moving_object = true
+        @delta_x = @delta_y = 0
+
+        @selected.setMouseStart?(mouse.x, mouse.y)
+
+        @reset_caret()
+
+
+
+
+  #
+  # Handle mouse movement events.
+  #
+  handle_mousemove: (e) ->
+
+    #ignore mouse movements when a dialog is open
+    return if @dialog_open
+
+    #get the position of the mouse, relative to the canvas
+    mouse = cross_browser_relative_mouse_position(e)
+
+    #if we're in the middle of creating a transition, render a visual cue indicating the
+    #transition to be created
+    if @current_transition?
+      @create_transition_cue(mouse)
+
+    #if we're in the middle of moving an object, handle its movement
+    if @moving_object?
+      @handle_object_move(move)
+
+
+  #
+  # Handles movement of the currently selected object.
+  #
+  handle_object_move: (mouse) ->
+
+    #perform the actual move
+    @selected.move_to(mouse.x, mouse.y)
+
+    #if this is a state, handle "snapping", if necessary
+    if @selected instanceof State
+      @handle_state_snap()
+
+    #re-draw the active FSM
+    @draw()
+ 
+  #
+  # Handles automatic alignment of states.
+  #
+  handle_state_snap: ->
+
+    #for each state in the FSM
+    for state in states
+      
+      #never try to snap a state to itself
+      continue if state is @selected
+
+      #get the distance between the selected object and the given state
+      distance = state.distance_from(@selected)
+
+      #if the selected object is close enough to the given state,
+      #align it horizontally with the given state
+      if(Math.abs(distance.x) < @snap_to_padding)
+        @selected.x = state.x
+
+      #if the selected object is close enough to the given state,
+      #align it vertically with the given state
+      if(Math.abs(distance.y) < @snap_to_padding)
+        @selected.y = state.yu
+
+
+
+
+  #
+  # Handles node-based text entry.
+  #
+  handle_text_entry: (key) ->
+
+    #if we don't have a selected object, abort
+    return unless @selected?
+
+    #save an undo step, if needed
+    @save_text_undo_step()
+
+    #if we're in output mode, and the currently selected object exists and has an output property,
+    #append the key to the output expression
+    if @in_output_mode and @selected.outputs?
+      @selected.outputs += String.fromCharCode(key)
+
+    #otherwise, append the key to the output
+    else 
+      @selected.text += String.fromCharCode(key)
+
+    #reset the designer's caret position, and re-draw
+    @reset_caret()
+    @draw()
+
+  #TODO: re-write
+  hasFocus: ->
+    return false if document.getElementById('helppanel').style.visibility is 'visible'
+    return document.activeElement or document.body is document.body
+  
+
+  #
+  #Returns true iff the given key represents a printable character
+  #
+  @keypress_is_printable: (e) ->
+    
+    #return true iff the key is in the alpha-numeric range, and none of the modifiers are pressed
+    key = cross_browser_key(e)
+    key >= 0x20 and key <= 0x7E and not e.metaKey and not e.altKey and not e.ctrlKey
+
+  #
+  #Returns true iff the given keypress should trigger a redo event.
+  #
+  @keypress_represents_redo: (e) ->
+
+    #get the keycode for the key that was pressed
+    key = cross_browser_key(e)
+    
+    #return true iff one of our accepted redo combinations is present
+    (key is FSMDesigner.KeyCodes.Y and e.ctrlKey) or                  #pure CTRL+Y
+      (key is FSMDesigner.KeyCodes.REDO) or                           #WebKit's interpretation of CTRL+Y
+      (key is FSMDesigner.KeyCodes.z and e.ctrlKey && e.shiftKey) or  #pure Shift+Ctrl+Z
+      (key is FSMDesigner.KeyCodes.UNDO && e.shiftKey)                #WebKit's interpretation of CTRL+Z, plus shift
+
+
+  #
+  #Returns true iff the given keypress should trigger an undo event
+  #
+  @keypress_represents_undo: (e) ->
+
+    #get the keycode for the key that was pressed
+    key = cross_browser_key(e)
+
+    #return true iff one our accepted undo combinations is present
+    (key is FSMDesigner.KeyCodes.z and e.ctrlKey and not e.shiftKey) or #pure CTRL+Z (but not CTRL+Shift+Z)
+      (key is FSMDesigner.KeyCodes.UNDO and not e.shiftKey)             #WebKit's interpretation of CTRL+Z (but not CTRL+Shift+Z)
 
 
   #Loads a file from an HTML5 file object
@@ -306,13 +715,123 @@ class FSMDesigner
     @recreate_state(@redo_stack.pop())
     @draw()
 
+  #
+  # Creates a new FSMDesigner from a dehydrated copy.
+  # To replace the current FSMDesigner with the contents of a dehydrated copy, use
+  # "replace_with_rehydrated".
+  #
+  @rehydrate: (dehydrated, canvas) ->
+
+    #create a new FSMDesigner object
+    designer = new FSMDesigner(canvas)
+
+    #and replace its contents with a rehydrated copy of the original
+    designer.replace_with_rehydrated(dehydrated)
+
+    #return the newly created copy
+    designer
+
+  #
+  # Re-creates a given state from a dehydrated copy.
+  #
+  rehydrate_state: (dehydrated) ->
+
+    #create a new state object at the same location as the dehydrated state
+    state = new State(dehydrated.x, dehydrated.y, this)
+
+    #and set the appropriate properties
+    state.is_accept_state = dehydrated.is_accept_state
+    state.text = dehydrated.text
+    state.outputs = dehydrated.outputs
+    state.radius = dehydrated.radius
+
+    #return the newly recreated state
+    state
+
+  #
+  # Re-creates a given state from a dehydrated copy.
+  #
+  rehydrate_transition: (dehydrated) ->
+
+    transition = null
+
+    #recreate one of various transitions, depending on type
+    switch dehydrated.type
+
+      when 'SelfTransition', 'SelfLink'
+        #Transitions a dehydrated with the _index_ of the state they connect to.
+        #Convert that back into a state...
+        state = @states[dehydrated.state or dehydrated.node]
+
+        #... and use that to create the transition.
+        transition = new SelfTransition(state, null, this)
+        transition.anchor_angle = dehydrated.anchor_angle or dehydrated.anchorAngle
+        transition.text = dehydrated.text
+        
+      when 'StartTransition', 'StartLink'
+        #Transitions a dehydrated with the _index_ of the state they connect to.
+        #Convert that back into a state...
+        state = @states[dehydrated.state or dehydrated.node]
+
+        #... and use that to create the transition.
+        transition = new StartTransition(@states[state], null, this)
+        transition.delta_x = dehydrated.delta_x or dehydrated.deltaX
+        transition.delta_y = dehydrated.delta_y or dehydrated.deltaY
+        transition.text = dehydrated.text
+
+      when 'Transition', 'Link'
+        #Transitions a dehydrated with the _index_ of the states they connect to.
+        #Convert that back into a state...
+        source = @states[dehydrated.source or dehydrated.nodeA]
+        destination = @states[dehydrated.destination or dehydrated.nodeB]
+
+        #... and use that to create the transition.
+        transition = new Transition(source, destination, this)
+        transition.parallel_part = dehydrated.parallel_part or dehydrated.parallelPart
+        transition.perpendicular_part = dehydrated.perpendicular_part or dehydrated.perpendicularPart
+        transition.text = dehydrated.text
+        transition.line_angle_adjustment = dehydrated.line_angle_adjustment or dehydrated.lineAngleAdjust
+
+    #return the newly re-created transition
+    transition
+
+  #
+  # Replaces the current FSM designer with a re-creation ("rehydration") 
+  # of a dehydrated state.
+  #
+  replace_with_rehydrated: (dehyrated) ->
+
+    #Clear the existing FSM.
+    @clear(true)
+
+    #Allow the state to specify either the newer state/transition form, or the deprecated node/link form.
+    states = dehydrated.states or dehydrated.nodes
+    transitions = dehydrated.transitions or dehydrated.nodes
+
+    #Restore each of the states and transitions:
+    @states = (@rehydrate_state(s) for s in states)
+    @transitions = (@rehydrate_transition(t) for t in transitions)
+
+    #Draw the newly-reconstructed state.
+    @draw()
+
+  #
+  # Resets text entry status; should be called when switching text entry fields.
+  #
+  reset_text_entry: ->
+
+    #if a text-entry timeout exists, clear it
+    if @text_entry_timeout?
+      clearTimeout(@text_entry_timeout)
+      @text_entry_timeout = null
+
 
   #Saves a FSM file using a Data URI.
   #This method is not preferred, but will be used if Flash cannot be found.
   save_file_data_uri: ->
     
     #get a serialization of the FSM's state, for saving
-    content = @serialize_state()
+    content = @serialize()
     
     #convert it to a data URI
     uri_content = 'data:application/x-fsm,' + encodeURIComponent(content)
@@ -352,9 +871,31 @@ class FSMDesigner
     #push the system's state onto the redo stack
     @redo_stack.push(@get_state)
 
+  #
+  # Saves an undo step.
+  # If the user hasn't entered text recently, and force is false, this function will
+  # skip the save.
+  #
+  save_text_undo_step: (force=false) ->
 
+    #create a function which "turns off" the text entry timeout
+    cancel_timeout = => @text_entry_timout = null
 
+    #if the user has entered text recently, re-set the "entered text recently" timer
+    if @text_entry_timeout?
+      clearTimeout @text_entry_timeout
+
+    #if the user hasn't entered text recently, or force is on, save an undo step
+    if not @text_entry_timeout or force
+      @save_undo_step()
+
+    #set a timer, which will prevent text-entry from triggering undo points
+    #until the user stops typing for at least text_undo_delay
+    @text_entry_timeout = setTimeout(cancel_timeout, @text_undo_delay);
+
+  #
   #Return a serialization of the FSMDesginer, appropriate for saving
+  #
   serialize: ->
     JSON.stringify(@get_state()) 
 
