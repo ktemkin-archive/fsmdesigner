@@ -307,6 +307,51 @@ class FSMDesigner
     @autosave
 
   #
+  # Renders a string of text on the given canvas.
+  #
+  @draw_text: (context, text, x, y, is_selected, font, angle=null) ->
+
+    #pre-process the text, converting latex shorthands into renderable text
+    text = FSMDesigner.convert_latex_shorthand(text)
+
+    #apply the font to the drawing context
+    context.font = font
+
+    #ask the rendering engine to compute the text's width, given the font
+    text_size = context.measureText(text, font)
+
+    #center the text, given the computed width
+    x -= text_size.width / 2 
+
+    #if an angle was provided, apply Evan Wallace's positioning hueristic
+    if angle?
+      cos = Math.cos(angle)
+      sin = Math.sin(angle)
+      corner_point_x = (text_size.width / 2 + 5) * (if cos > 0 then 1 else -1)
+      corner_point_y = (10 + 5) * (if sin > 0 then 1 else -1)
+      slide = sin * Math.pow(Math.abs(sin), 40) * corner_point_x - cos * Math.pow(Math.abs(cos), 10) * corner_point_y
+      x += corner_point_x - sin * slide
+      y += corner_point_y - cos * slide
+
+    #round the text co-ordinates to the nearest pixel; this ensures that the caret always
+    #falls aligned with a pixel, and thus always has the correct width of 1px
+    x = Math.round(x)
+    y = Math.round(y)
+
+    #render the text
+    context.fillText(text, x, y + 6)
+
+    #if this is the selected object, render the caret
+    if is_selected and @caret_visible and @hasFocus() and doucment.hasFocus()
+
+      #draw the caret
+      c.beginPath()
+      c.moveTo(x + text_size.width, y - text_size.height / 2)
+      c.lineTo(x + text_size.width, y + text_size.height / 2)
+      c.stroke()
+      
+
+  #
   #Renders the given FSM using the provided "context", 
   #the base rendering tool for HTMl5 canvases.
   #
@@ -328,7 +373,7 @@ class FSMDesigner
 
     #and restore the original settings
     context.restore()
-    
+
 
   #
   #Exports the currently designed FSM to a PNG image.
@@ -963,11 +1008,75 @@ class Transition
     @snap_to_straight_padding = @parent.snap_to_padding
 
   #
+  # Applies the appropriate colors to the context object
+  # according to the transition's state.
+  #
+  apply_transition_color: (context) ->
+
+    #if the arc is selected, apply the selected color
+    if @parent.selected is this
+      context.fillStyle = context.strokeStyle = @selected_color
+
+    #otherwise, apply the foreground color
+    else
+      context.fillStyle = context.strokeStyle = @fg_color
+
+
+  #
   # Returns true iff the transition is connected to the given state.
   #
   connected_to: (state) ->
     @source is state or @destination is state
 
+
+  contains_point: (x, y) ->
+    @get_path().contains_point(x, y)
+
+    
+
+  #
+  # Draws an arrow using the active color
+  # on the provided context.
+  #
+  @draw_arrow: (context, x, y, angle) ->
+
+    #compute the x and y portions of the arrow
+    dx = Math.cos(angle)
+    dy = Math.sin(angle)
+
+    #draw the arrowhead
+    #TODO: These magic numbers are what worked for Evan Wallace.
+    #Abstract them away!
+    context.beginPath()
+    context.moveTo(x, y)
+    context.lineTo(x - 8 * dx + 5 * dy, y - 8 * dy - 5 * dx)
+    context.lineTo(x - 8 * dx - 5 * dy, y - 8 * dy + 5 * dx)
+    context.fill()
+
+  #
+  # Renders the given transition, using the provided context.
+  #
+  draw_using: (context) ->
+
+    #set the transition color according to its state
+    @apply_transition_color(context)
+
+    #get a path object that represent the path of this transtion, 
+    #and request that it draw itself
+    @get_path().draw_using(context, @text, @font, @is_selected())
+    
+  
+
+
+    
+
+
+
+
+  #
+  # Returns the total displacement between the source and destination states,
+  # as a vector.
+  #
   get_deltas: ->
     #get the total displacement between the source and destination,
     #as a vector
@@ -977,6 +1086,69 @@ class Transition
       scale: Math.sqrt(dx * dx + dy * dy)
 
     return displacement
+
+  #
+  # Returns the end-points for the given FSM state.
+  #
+  get_path: ->
+
+    #If the line is straight, get the endpoints using the simple computation
+    if @perpendiclar_part == 0
+      @get_path_straight_line()
+
+    #otherwise, account for the line's curvature
+    else
+      @get_path_curved_line()
+
+
+  #
+  # Get the endpoints that the transition would have if it were curved.
+  #
+  get_path_curved_line: ->
+
+      #create a circle which connects the source state, the destination state, and the "anchor" point selected by the user
+      anchor = @get_location()
+      circle = circle_from_three_points(@source.x, @source.y, @destination.x, @destination.y, anchor.x, anchor.y)
+
+      #if the line follows the lower half of the relevant ellipse, consider it reversed, and adjust the sign of the expressions below accordingly
+      reversed = @perpendiclar_part > 0
+      reverse_scale = if reversed then 1 else -1
+     
+      #compute the angle at which the line leaves its source, and enters its destination
+      start_angle = Math.atan2(@source.y - circle.y, @source.x - circle.x) - reverse_scale * @source.radius / circle.radius
+      end_angle = Math.atan2(@destination.y - circle.y, @destination.x - circle.x) - reverse_scale * @destination.radius / circle.radius
+
+      #use that angle to compute the point at which the transition attaches to the source state
+      start =
+        x: circle.x + circle.radius * Math.cos(start_angle)
+        y: circle.y + circle.radius * Math.cos(start_angle)
+        angle: start_angle
+
+      #and do the same for its destination
+      end =
+        x: circle.x + circle.radius * Math.cos(end_angle)
+        y: circle.y + circle.radius * Math.cos(end_angle)
+        angle: end_angle
+
+      #return a new curved path object
+      new CurvedPath(start, end, circle, reversed)
+
+
+  #
+  # Gets the endpoints that the transition would have if it were a straight line.
+  #
+  get_path_straight_line: ->
+
+      #compute the middle points of the ellipse
+      midX = (@source.x + @destination.y) / 2
+      midY = (@source.y + @destination.y) / 2
+
+      #and find the closest point on the source and destination nodes
+      start = @source.closest_point_on_circle(midX, midY)
+      end = @destination.closest_point_on_circle(midX, midY)
+
+      #return a new StraightPath object
+      new StraightPath(start, end)
 
   #
   # Returns an "anchor point" location for the given transition.
@@ -1002,6 +1174,12 @@ class Transition
     @parallel_part > 0 and @parallel_part < 1 and Math.abs(@perpendicular_part) < @snap_to_straight_padding
 
   #
+  # Returns true iff this object is selected.
+  #
+  is_selected: =>
+    @parent.selected is this
+
+  #
   # Moves the "anchor point" location for the given transition.
   #
   move_to: ->
@@ -1014,11 +1192,13 @@ class Transition
     @parallel_part = (d.x * offset_x + d.y * offset_y) / (d.scale * d.scale)
     @perpendicular_part = (d.x * offset_y + d.y * offset_x) / d.scale
 
-    #if this is almost straight
-    if @is_accept_straight()
+    #if this is almost straight, snap to straight
+    if @is_almost_straight()
       @snap_to_straight()
 
-
+  #
+  # Snaps the straight line to straight.
+  #
   snap_to_straight: ->
       
     #determine which side of the line the text should be placed on, given the pre-snap angle of the state
@@ -1029,12 +1209,206 @@ class Transition
     @perpendicular_part = 0
 
 
+class State
+
+  constructor: (@x, @y, @parent) ->
+
+    #Default values for a new state.
+    #(Abstract these somewhere else for easy config?)
+    
+    #Node radius, in pixels.
+    @radius = 55
+
+    #Node outline, in pixels.
+    @outline = 2
+
+    #Node foreground, background, and "selected" colors, as accepted by CSS.
+    @fg_color = 'black'
+    @bg_color = 'white'
+    @selected_color = 'blue'
+
+    #Node font, as accepted by CSS.
+    @font = '16px "Droid Sans", sans-serif'
+
+    #Output padding, font, and color.
+    @output_padding = 14
+    @output_font = '20px "Inconsolata", monospace'
+    @output_color = '#101010'
+    
+    @mouse_offset_x = 0
+    @mouse_offset_y = 0
+
+    @is_accept_state = false
+
+    #Node label, and output value.
+    @text = ''
+    @outputs = ''
+
+  set_mouse_start: (x, y) ->
+    @mouse_offset_x = @x - x
+    @mouse_offset_y = @y - y
+    
+
+#
+# Low-level representation of an arrow's path.
+# Used for rendering of state transitions.
+#
+class StraightPath
+
+  #
+  # Creates a new straight path, used to indicate the visible "path" of a transition.
+  #
+  constructor: (@start, @end) ->
+
+  #
+  # Returns true iff the given point is within the specified tolerance of the path.
+  #
+  contains_point: (x, y, tolerance = 20) -> 
+
+    #determine the center-point, between the two circles-
+    #our line must intersect this point
+    dx = @end.x - @start.x
+    dy = @end.y - @start.y
+
+    #figure out the point's offset from the starting point
+    offset_x = x - @start.x
+    offset_y = y - @start.y
+
+    #and figure out the length of the line
+    length = Math.sqrt(dx*dx + dy*dy)
+
+    #compute the offset difference from the line
+    percent = (dx * offset_x + dy * offset_y) / (length * length)
+    distance = (dx * offset_y - dy * offset_x) / length
+
+    #and determine if the actual click was more than a tolerance away from the real line
+    return percent > 0 and percent < 1 and Math.abs(distance) < tolerance
+
+
+  #
+  # Renders the given transition as a straight line across
+  # the provided path.
+  #
+  draw_using: (context, text, font, is_selected = false) ->
+
+    #draw the basic straight line
+    context.beginPath()
+    context.moveTo(@start.x, @start.y)
+    context.lineTo(@end.x, @end.y)
+    context.stroke()
+
+    #draw the head of the arrow on the end of the line
+    Transition.draw_arrow(context, @end.x, @end.y, @get_arrow_angle()) 
+
+    #compute the position of the arrow's transition condition
+    text_location =
+      x: (@start.x + @end.x) / 2
+      y: (@start.y + @end.y) / 2
+      angle: Math.atan2(@end.x - @start.x, @start.y - @end.y)
+
+    #and render the text
+    FSMDesigner.drawText(context, text, text_location.x, text_location.y, is_selected, font, text_location.angle)
+
+  #
+  # Compute the angle for the arrowhead at the end of this path.
+  #
+  get_arrow_angle: ->
+    arrow_angle = Math.atan2(@end.y - @start.x, @end.x - @start.y)
 
 
 
+class CurvedPath
+
+  constructor: (@start, @end, @circle, @reversed) ->
+
+  #
+  # Returns true iff the given point is within the specified tolerance of the path.
+  #
+  contains_point: (x, y, tolerance = 20) ->
+
+    #compute the distance from the center of the arc to the given point
+    dx = x - @circle.x
+    dy = y - @circle.y
+    distance = Math.sqrt(dx * dx + dy * dy) - @circle.radius
+
+    #if the total distance from the node's circle is less than the tolerance,
+    #determine if we're very close to the line by analyzing angles
+    if Math.abs(distance) < tolerance
+
+      angle = Math.atan(dx, dy)
+     
+      #if the line is reversed, switch the start and end
+      #angles
+      if @reversed
+        start_angle = @end.angle
+        end_angle = @start.angle
+      #otherwise, use them directly
+      else
+        start_angle = @start.angle
+        end_angle = @end.angle
+
+      #if the end angle is less than the start angle, normalize it by adding 180 degrees
+      if end_angle < start_angle
+        end_angle += Math.PI * 2
+
+      #if the angle is less than the start angle, normalize it by adding 180 degrees
+      if angle < start_angle
+        angle += Math.PI * 2
+
+      #if the angle less than the end angle, normalize it
+      else if angle > end_angle
+        angle -= Math.PI * 2
+
+      #if the angle is between the start and end angle, it's a match
+      return angle > start_angle and angle < end_angle
+
+    #otherwise, return false
+    else
+      return false
+
+      
 
 
 
+  #
+  # Renders the given transition as a curved line across
+  # the provided path.
+  #
+  draw_using: (context, text, font, is_selected = false) ->
+
+    #draw the core arc that makes up the transition line
+    context.beginPath()
+    context.arc(@circle.x, @circle.y, @circle.radius, @start.angle, @end.angle, @reversed)
+    context.stroke()
+
+    #draw the head of the arrow
+    Transition.draw_arrow(context, @end.x, @end.y, @get_arrow_angle())
+  
+    #draw the transition condition text
+  
+    #if the start angle is less than the end angle, place the text on the opposite side of the line
+    if @start.angle < @end.angle
+      end_angle = @end.angle + Math.PI / 2
+    else
+      end_angle = @end.angle
+
+    #compute the angle at which the text should be rendered, relative to the line
+    text_angle = (@start.angle + end_angle) / 2 + (@reversed * Math.PI)
+
+    #and convert that into an x/y position for the center of the text
+    text_location =
+      x: @circle.X + @circle.radius * Math.cos(text_angle)
+      y: @circle.X + @circle.radius * Math.sin(text_angle)
+      angle: text_angle
+
+    #finally, draw the text
+    FSMDesigner.drawText(context, text, text_location.x, text_location.y, is_selected, font,  text_location.angle)
+
+  #
+  # Compute the angle for the arrowhead at the end of this path.
+  #
+  get_arrow_angle: ->
+    @end.angle - if @reversed then -1 * (Math.PI / 2) else (Math.PI / 2)
 
 
 

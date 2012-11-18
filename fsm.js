@@ -37,8 +37,9 @@
 
 
 (function() {
-  var FSMDesigner, Transition,
-    __indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; };
+  var CurvedPath, FSMDesigner, State, StraightPath, Transition,
+    __indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; },
+    __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
 
   FSMDesigner = (function() {
 
@@ -319,6 +320,35 @@
       context = this.canvas.getContext('2d');
       this.draw_using(context);
       return this.autosave;
+    };
+
+    FSMDesigner.draw_text = function(context, text, x, y, is_selected, font, angle) {
+      var corner_point_x, corner_point_y, cos, sin, slide, text_size;
+      if (angle == null) {
+        angle = null;
+      }
+      text = FSMDesigner.convert_latex_shorthand(text);
+      context.font = font;
+      text_size = context.measureText(text, font);
+      x -= text_size.width / 2;
+      if (angle != null) {
+        cos = Math.cos(angle);
+        sin = Math.sin(angle);
+        corner_point_x = (text_size.width / 2 + 5) * (cos > 0 ? 1 : -1);
+        corner_point_y = (10 + 5) * (sin > 0 ? 1 : -1);
+        slide = sin * Math.pow(Math.abs(sin), 40) * corner_point_x - cos * Math.pow(Math.abs(cos), 10) * corner_point_y;
+        x += corner_point_x - sin * slide;
+        y += corner_point_y - cos * slide;
+      }
+      x = Math.round(x);
+      y = Math.round(y);
+      context.fillText(text, x, y + 6);
+      if (is_selected && this.caret_visible && this.hasFocus() && doucment.hasFocus()) {
+        c.beginPath();
+        c.moveTo(x + text_size.width, y - text_size.height / 2);
+        c.lineTo(x + text_size.width, y + text_size.height / 2);
+        return c.stroke();
+      }
     };
 
     FSMDesigner.prototype.draw_using = function(context) {
@@ -760,6 +790,7 @@
       this.source = source;
       this.destination = destination;
       this.parent = parent;
+      this.is_selected = __bind(this.is_selected, this);
       this.font = '16px "Inconsolata", monospace';
       this.fg_color = 'black';
       this.bg_color = 'white';
@@ -771,8 +802,36 @@
       this.snap_to_straight_padding = this.parent.snap_to_padding;
     }
 
+    Transition.prototype.apply_transition_color = function(context) {
+      if (this.parent.selected === this) {
+        return context.fillStyle = context.strokeStyle = this.selected_color;
+      } else {
+        return context.fillStyle = context.strokeStyle = this.fg_color;
+      }
+    };
+
     Transition.prototype.connected_to = function(state) {
       return this.source === state || this.destination === state;
+    };
+
+    Transition.prototype.contains_point = function(x, y) {
+      return this.get_path().contains_point(x, y);
+    };
+
+    Transition.draw_arrow = function(context, x, y, angle) {
+      var dx, dy;
+      dx = Math.cos(angle);
+      dy = Math.sin(angle);
+      context.beginPath();
+      context.moveTo(x, y);
+      context.lineTo(x - 8 * dx + 5 * dy, y - 8 * dy - 5 * dx);
+      context.lineTo(x - 8 * dx - 5 * dy, y - 8 * dy + 5 * dx);
+      return context.fill();
+    };
+
+    Transition.prototype.draw_using = function(context) {
+      this.apply_transition_color(context);
+      return this.get_path().draw_using(context, this.text, this.font, this.is_selected());
     };
 
     Transition.prototype.get_deltas = function() {
@@ -783,6 +842,44 @@
         scale: Math.sqrt(dx * dx + dy * dy)
       };
       return displacement;
+    };
+
+    Transition.prototype.get_path = function() {
+      if (this.perpendiclar_part === 0) {
+        return this.get_path_straight_line();
+      } else {
+        return this.get_path_curved_line();
+      }
+    };
+
+    Transition.prototype.get_path_curved_line = function() {
+      var anchor, circle, end, end_angle, reverse_scale, reversed, start, start_angle;
+      anchor = this.get_location();
+      circle = circle_from_three_points(this.source.x, this.source.y, this.destination.x, this.destination.y, anchor.x, anchor.y);
+      reversed = this.perpendiclar_part > 0;
+      reverse_scale = reversed ? 1 : -1;
+      start_angle = Math.atan2(this.source.y - circle.y, this.source.x - circle.x) - reverse_scale * this.source.radius / circle.radius;
+      end_angle = Math.atan2(this.destination.y - circle.y, this.destination.x - circle.x) - reverse_scale * this.destination.radius / circle.radius;
+      start = {
+        x: circle.x + circle.radius * Math.cos(start_angle),
+        y: circle.y + circle.radius * Math.cos(start_angle),
+        angle: start_angle
+      };
+      end = {
+        x: circle.x + circle.radius * Math.cos(end_angle),
+        y: circle.y + circle.radius * Math.cos(end_angle),
+        angle: end_angle
+      };
+      return new CurvedPath(start, end, circle, reversed);
+    };
+
+    Transition.prototype.get_path_straight_line = function() {
+      var end, midX, midY, start;
+      midX = (this.source.x + this.destination.y) / 2;
+      midY = (this.source.y + this.destination.y) / 2;
+      start = this.source.closest_point_on_circle(midX, midY);
+      end = this.destination.closest_point_on_circle(midX, midY);
+      return new StraightPath(start, end);
     };
 
     Transition.prototype.get_location = function() {
@@ -799,6 +896,10 @@
       return this.parallel_part > 0 && this.parallel_part < 1 && Math.abs(this.perpendicular_part) < this.snap_to_straight_padding;
     };
 
+    Transition.prototype.is_selected = function() {
+      return this.parent.selected === this;
+    };
+
     Transition.prototype.move_to = function() {
       var d, offset_x, offset_y;
       d = this.get_deltas();
@@ -806,7 +907,7 @@
       offset_y = y - this.source.y;
       this.parallel_part = (d.x * offset_x + d.y * offset_y) / (d.scale * d.scale);
       this.perpendicular_part = (d.x * offset_y + d.y * offset_x) / d.scale;
-      if (this.is_accept_straight()) {
+      if (this.is_almost_straight()) {
         return this.snap_to_straight();
       }
     };
@@ -817,6 +918,157 @@
     };
 
     return Transition;
+
+  })();
+
+  State = (function() {
+
+    function State(x, y, parent) {
+      this.x = x;
+      this.y = y;
+      this.parent = parent;
+      this.radius = 55;
+      this.outline = 2;
+      this.fg_color = 'black';
+      this.bg_color = 'white';
+      this.selected_color = 'blue';
+      this.font = '16px "Droid Sans", sans-serif';
+      this.output_padding = 14;
+      this.output_font = '20px "Inconsolata", monospace';
+      this.output_color = '#101010';
+      this.mouse_offset_x = 0;
+      this.mouse_offset_y = 0;
+      this.is_accept_state = false;
+      this.text = '';
+      this.outputs = '';
+    }
+
+    State.prototype.set_mouse_start = function(x, y) {
+      this.mouse_offset_x = this.x - x;
+      return this.mouse_offset_y = this.y - y;
+    };
+
+    return State;
+
+  })();
+
+  StraightPath = (function() {
+
+    function StraightPath(start, end) {
+      this.start = start;
+      this.end = end;
+    }
+
+    StraightPath.prototype.contains_point = function(x, y, tolerance) {
+      var distance, dx, dy, length, offset_x, offset_y, percent;
+      if (tolerance == null) {
+        tolerance = 20;
+      }
+      dx = this.end.x - this.start.x;
+      dy = this.end.y - this.start.y;
+      offset_x = x - this.start.x;
+      offset_y = y - this.start.y;
+      length = Math.sqrt(dx * dx + dy * dy);
+      percent = (dx * offset_x + dy * offset_y) / (length * length);
+      distance = (dx * offset_y - dy * offset_x) / length;
+      return percent > 0 && percent < 1 && Math.abs(distance) < tolerance;
+    };
+
+    StraightPath.prototype.draw_using = function(context, text, font, is_selected) {
+      var text_location;
+      if (is_selected == null) {
+        is_selected = false;
+      }
+      context.beginPath();
+      context.moveTo(this.start.x, this.start.y);
+      context.lineTo(this.end.x, this.end.y);
+      context.stroke();
+      Transition.draw_arrow(context, this.end.x, this.end.y, this.get_arrow_angle());
+      text_location = {
+        x: (this.start.x + this.end.x) / 2,
+        y: (this.start.y + this.end.y) / 2,
+        angle: Math.atan2(this.end.x - this.start.x, this.start.y - this.end.y)
+      };
+      return FSMDesigner.drawText(context, text, text_location.x, text_location.y, is_selected, font, text_location.angle);
+    };
+
+    StraightPath.prototype.get_arrow_angle = function() {
+      var arrow_angle;
+      return arrow_angle = Math.atan2(this.end.y - this.start.x, this.end.x - this.start.y);
+    };
+
+    return StraightPath;
+
+  })();
+
+  CurvedPath = (function() {
+
+    function CurvedPath(start, end, circle, reversed) {
+      this.start = start;
+      this.end = end;
+      this.circle = circle;
+      this.reversed = reversed;
+    }
+
+    CurvedPath.prototype.contains_point = function(x, y, tolerance) {
+      var angle, distance, dx, dy, end_angle, start_angle;
+      if (tolerance == null) {
+        tolerance = 20;
+      }
+      dx = x - this.circle.x;
+      dy = y - this.circle.y;
+      distance = Math.sqrt(dx * dx + dy * dy) - this.circle.radius;
+      if (Math.abs(distance) < tolerance) {
+        angle = Math.atan(dx, dy);
+        if (this.reversed) {
+          start_angle = this.end.angle;
+          end_angle = this.start.angle;
+        } else {
+          start_angle = this.start.angle;
+          end_angle = this.end.angle;
+        }
+        if (end_angle < start_angle) {
+          end_angle += Math.PI * 2;
+        }
+        if (angle < start_angle) {
+          angle += Math.PI * 2;
+        } else if (angle > end_angle) {
+          angle -= Math.PI * 2;
+        }
+        return angle > start_angle && angle < end_angle;
+      } else {
+        return false;
+      }
+    };
+
+    CurvedPath.prototype.draw_using = function(context, text, font, is_selected) {
+      var end_angle, text_angle, text_location;
+      if (is_selected == null) {
+        is_selected = false;
+      }
+      context.beginPath();
+      context.arc(this.circle.x, this.circle.y, this.circle.radius, this.start.angle, this.end.angle, this.reversed);
+      context.stroke();
+      Transition.draw_arrow(context, this.end.x, this.end.y, this.get_arrow_angle());
+      if (this.start.angle < this.end.angle) {
+        end_angle = this.end.angle + Math.PI / 2;
+      } else {
+        end_angle = this.end.angle;
+      }
+      text_angle = (this.start.angle + end_angle) / 2 + (this.reversed * Math.PI);
+      text_location = {
+        x: this.circle.X + this.circle.radius * Math.cos(text_angle),
+        y: this.circle.X + this.circle.radius * Math.sin(text_angle),
+        angle: text_angle
+      };
+      return FSMDesigner.drawText(context, text, text_location.x, text_location.y, is_selected, font, text_location.angle);
+    };
+
+    CurvedPath.prototype.get_arrow_angle = function() {
+      return this.end.angle - (this.reversed ? -1 * (Math.PI / 2) : Math.PI / 2);
+    };
+
+    return CurvedPath;
 
   })();
 
