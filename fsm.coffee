@@ -543,22 +543,27 @@ class FSMDesigner
     if @selected?
 
       #if we've selected a state, and we're in transition creation mode, create a new self-link
-      if @modal_behavior = FSMDesigner.ModalBehaviors.CREATE and @selected instanceof State
-        @current_link = new SelfTransition(@selected, mouse, @)
+      if @modal_behavior is FSMDesigner.ModalBehaviors.CREATE and @selected instanceof State
+        @current_transition = new SelfTransition(@selected, mouse, @)
 
-      #otherwise, if we're in pointer mode, move into "state movement" mode
-      else if @modal_behavior = FSMDesigner.ModalBehaviors.POINTER
+      #otherwise, if we're in pointer mode, move into "object movement" mode
+      else if @modal_behavior is FSMDesigner.ModalBehaviors.POINTER
+        @start_moving_selected()
 
-        @save_undo_step()
+      #otherwise, create a new temporary reset-arc which both starts and ends at the current location
+      else if @modal_behavior is FSMDesigner.ModalBehaviors.CREATE
+        @current_transition = TemporaryTransition(mouse, mouse)
 
-        @moving_object = true
-        @delta_x = @delta_y = 0
+      #re-draw the modified FSM
+      @draw()
 
-        @selected.setMouseStart?(mouse.x, mouse.y)
+      #if the canvas is focused, prevent mouse events from propagating
+      #(this prevents drag-and-drop from moving us to another window)
+      return false if @hasFocus()
 
-        @reset_caret()
-
-
+      #reset the caret, and allow events to propagate
+      @reset_caret()
+      return true
 
 
   #
@@ -899,6 +904,27 @@ class FSMDesigner
   serialize: ->
     JSON.stringify(@get_state()) 
 
+  #
+  # Put the deisgner into object movement mode.
+  #
+  start_moving_selected: ->
+
+    #save an undo step before the change in movement 
+    @save_undo_step()
+
+    #enable movement mode
+    @moving_object = true
+
+    #set the initial distance from the click site to zeor
+    @delta_mouse_x = @delta_mouse_y = 0
+
+    #if the object supports it, notify it of the location from which it is
+    #being moved
+    @selected.set_mouse_start?(mouse.x, mouse.y)
+
+    #reset the text-entry caret
+    @reset_caret()
+
   #Performs an "undo", undoing the most recent user action.
   undo: ->
 
@@ -915,6 +941,94 @@ class FSMDesigner
   #Return true if two "undo" states contain the same value.
   @states_equivalent: (a, b) ->
     JSON.stringify(a) == JSON.stringify(b)
+
+
+class Transition
+
+  constructor: (@source, @destination, @parent) ->
+
+    @font = '16px "Inconsolata", monospace'
+    @fg_color = 'black'
+    @bg_color = 'white'
+    @selected_color = 'blue'
+    @text = ''
+  
+    #Value added to the text angle when the transition is a straight line.
+    @line_angle_adjustment = 0
+
+    #The default "shape" of the line.
+    @parallel_part = 0.5
+    @perpendicular_part = 0
+
+    @snap_to_straight_padding = @parent.snap_to_padding
+
+  #
+  # Returns true iff the transition is connected to the given state.
+  #
+  connected_to: (state) ->
+    @source is state or @destination is state
+
+  get_deltas: ->
+    #get the total displacement between the source and destination,
+    #as a vector
+    displacement =
+      x: @destination.x - @source.x
+      y: @destination.y - @source.y 
+      scale: Math.sqrt(dx * dx + dy * dy)
+
+    return displacement
+
+  #
+  # Returns an "anchor point" location for the given transition.
+  # This is the location that is used for mouse-based movement of the transition.
+  #
+  get_location: ->
+
+    #get the differences between the start and end points of this line
+    d = @get_deltas()
+
+    #and use those to compute this line's anchor point
+    location =
+      x: (@source.x + d.x * @parallel_part - d.y * @perpendicular_part / d.scale)
+      y: (@source.y + d.y * @parallel_part + d.x * @perpendicular_part / d.scale)
+
+    return location
+
+  #
+  # Returns true iff the given line is "almost" straight, as determined by the
+  # "snap-to-straight" padding.
+  #
+  is_almost_straight: ->
+    @parallel_part > 0 and @parallel_part < 1 and Math.abs(@perpendicular_part) < @snap_to_straight_padding
+
+  #
+  # Moves the "anchor point" location for the given transition.
+  #
+  move_to: ->
+
+    d = @get_deltas()
+
+    #compute the two points in the ellipse given the new anchor point
+    offset_x = x - @source.x
+    offset_y = y - @source.y
+    @parallel_part = (d.x * offset_x + d.y * offset_y) / (d.scale * d.scale)
+    @perpendicular_part = (d.x * offset_y + d.y * offset_x) / d.scale
+
+    #if this is almost straight
+    if @is_accept_straight()
+      @snap_to_straight()
+
+
+  snap_to_straight: ->
+      
+    #determine which side of the line the text should be placed on, given the pre-snap angle of the state
+    #this allows the user to easily move the text to above or below the line
+    @line_angle_adjustment = (@perpendicular_part < 0) * Math.PI
+
+    #and snap the line to straight
+    @perpendicular_part = 0
+
+
 
 
 

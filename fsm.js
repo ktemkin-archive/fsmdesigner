@@ -37,7 +37,7 @@
 
 
 (function() {
-  var FSMDesigner,
+  var FSMDesigner, Transition,
     __indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; };
 
   FSMDesigner = (function() {
@@ -149,6 +149,25 @@
       this.transitions = [];
       this.selected = null;
       this.current_target = null;
+      return this.draw();
+    };
+
+    FSMDesigner.prototype.create_state_at_location = function(x, y) {
+      this.save_undo_step();
+      this.selected = new State(x, y, this);
+      this.states.push(this.selected);
+      this.reset_caret();
+      return this.draw();
+    };
+
+    FSMDesigner.prototype.create_transition_cue = function(mouse) {
+      var target_state;
+      target_state = this.find_state_at_position(mouse.x, mouse.y);
+      if (this.selected != null) {
+        this.current_transition = target_state === this.selected(new SelfTransition(this.selected, mouse, this)) ? void 0 : (typeof target_state === "function" ? target_state(new Transition(this.selected, target_state, this)) : void 0) ? void 0 : new TemporaryTransition(this.selected.closest_point_on_circle(mouse.x, mouse.y), mouse, this);
+      } else {
+        this.current_transition = (typeof target_state === "function" ? target_state(new ResetTransition(target_state, this.original_click, this)) : void 0) ? void 0 : new TemporaryTransition(this.original_click, mouse);
+      }
       return this.draw();
     };
 
@@ -380,6 +399,21 @@
       }
     };
 
+    FSMDesigner.prototype.handle_doubleclick = function(e) {
+      var mouse;
+      handle_modal_behavior();
+      mouse = cross_browser_relative_mouse_position(e);
+      this.selected = this.find_object_at_position(mouse.x, mouse.y);
+      this.reset_text_extry();
+      this.in_output_mode = false;
+      if (this.selected == null) {
+        this.create_state_at_location(mouse.x, mouse.y);
+      } else if (this.selected instanceof State) {
+        this.in_output_mode = true;
+      }
+      return this.draw();
+    };
+
     FSMDesigner.prototype.handle_keydown = function(e) {
       var key;
       key = cross_browser_key(e);
@@ -432,18 +466,75 @@
       }
     };
 
+    FSMDesigner.prototype.handle_mousedown = function(e) {
+      var mouse;
+      if (this.dialog_open) {
+        return;
+      }
+      mouse = cross_browser_relative_mouse_position(e);
+      this.moving_object = false;
+      this.in_output_mode = false;
+      this.original_click = false;
+      this.reset_text_extry();
+      this.selected = this.find_object_at_position(mouse.x, mouse.y);
+      if (this.selected != null) {
+        if (this.modal_behavior === FSMDesigner.ModalBehaviors.CREATE && this.selected instanceof State) {
+          this.current_transition = new SelfTransition(this.selected, mouse, this);
+        } else if (this.modal_behavior === FSMDesigner.ModalBehaviors.POINTER) {
+          this.start_moving_selected();
+        } else if (this.modal_behavior === FSMDesigner.ModalBehaviors.CREATE) {
+          this.current_transition = TemporaryTransition(mouse, mouse);
+        }
+        this.draw();
+        if (this.hasFocus()) {
+          return false;
+        }
+        this.reset_caret();
+        return true;
+      }
+    };
+
     FSMDesigner.prototype.handle_mousemove = function(e) {
-      var mouse, target_state;
+      var mouse;
       if (this.dialog_open) {
         return;
       }
       mouse = cross_browser_relative_mouse_position(e);
       if (this.current_transition != null) {
-        target_state = this.find_state_at_position(mouse.x, mouse.y);
-        if (this.selected != null) {
-          return this.current_transition = target_state === this.selected ? new SelfTransition(this.selected, mouse, this) : target_state == null ? new Transition(this.selected, target_state, this) : new TemporaryLink(this.selected.closest_point_on_circle(mouse.x, mouse.y), mouse, this);
+        this.create_transition_cue(mouse);
+      }
+      if (this.moving_object != null) {
+        return this.handle_object_move(move);
+      }
+    };
+
+    FSMDesigner.prototype.handle_object_move = function(mouse) {
+      this.selected.move_to(mouse.x, mouse.y);
+      if (this.selected instanceof State) {
+        this.handle_state_snap();
+      }
+      return this.draw();
+    };
+
+    FSMDesigner.prototype.handle_state_snap = function() {
+      var distance, state, _i, _len, _results;
+      _results = [];
+      for (_i = 0, _len = states.length; _i < _len; _i++) {
+        state = states[_i];
+        if (state === this.selected) {
+          continue;
+        }
+        distance = state.distance_from(this.selected);
+        if (Math.abs(distance.x) < this.snap_to_padding) {
+          this.selected.x = state.x;
+        }
+        if (Math.abs(distance.y) < this.snap_to_padding) {
+          _results.push(this.selected.y = state.yu);
+        } else {
+          _results.push(void 0);
         }
       }
+      return _results;
     };
 
     FSMDesigner.prototype.handle_text_entry = function(key) {
@@ -579,6 +670,13 @@
       return this.draw();
     };
 
+    FSMDesigner.prototype.reset_text_entry = function() {
+      if (this.text_entry_timeout != null) {
+        clearTimeout(this.text_entry_timeout);
+        return this.text_entry_timeout = null;
+      }
+    };
+
     FSMDesigner.prototype.save_file_data_uri = function() {
       var content, uri_content;
       content = this.serialize();
@@ -628,6 +726,17 @@
       return JSON.stringify(this.get_state());
     };
 
+    FSMDesigner.prototype.start_moving_selected = function() {
+      var _base;
+      this.save_undo_step();
+      this.moving_object = true;
+      this.delta_mouse_x = this.delta_mouse_y = 0;
+      if (typeof (_base = this.selected).set_mouse_start === "function") {
+        _base.set_mouse_start(mouse.x, mouse.y);
+      }
+      return this.reset_caret();
+    };
+
     FSMDesigner.prototype.undo = function() {
       if (this.undo_stack.length === 0) {
         return;
@@ -642,6 +751,72 @@
     };
 
     return FSMDesigner;
+
+  })();
+
+  Transition = (function() {
+
+    function Transition(source, destination, parent) {
+      this.source = source;
+      this.destination = destination;
+      this.parent = parent;
+      this.font = '16px "Inconsolata", monospace';
+      this.fg_color = 'black';
+      this.bg_color = 'white';
+      this.selected_color = 'blue';
+      this.text = '';
+      this.line_angle_adjustment = 0;
+      this.parallel_part = 0.5;
+      this.perpendicular_part = 0;
+      this.snap_to_straight_padding = this.parent.snap_to_padding;
+    }
+
+    Transition.prototype.connected_to = function(state) {
+      return this.source === state || this.destination === state;
+    };
+
+    Transition.prototype.get_deltas = function() {
+      var displacement;
+      displacement = {
+        x: this.destination.x - this.source.x,
+        y: this.destination.y - this.source.y,
+        scale: Math.sqrt(dx * dx + dy * dy)
+      };
+      return displacement;
+    };
+
+    Transition.prototype.get_location = function() {
+      var d, location;
+      d = this.get_deltas();
+      location = {
+        x: this.source.x + d.x * this.parallel_part - d.y * this.perpendicular_part / d.scale,
+        y: this.source.y + d.y * this.parallel_part + d.x * this.perpendicular_part / d.scale
+      };
+      return location;
+    };
+
+    Transition.prototype.is_almost_straight = function() {
+      return this.parallel_part > 0 && this.parallel_part < 1 && Math.abs(this.perpendicular_part) < this.snap_to_straight_padding;
+    };
+
+    Transition.prototype.move_to = function() {
+      var d, offset_x, offset_y;
+      d = this.get_deltas();
+      offset_x = x - this.source.x;
+      offset_y = y - this.source.y;
+      this.parallel_part = (d.x * offset_x + d.y * offset_y) / (d.scale * d.scale);
+      this.perpendicular_part = (d.x * offset_y + d.y * offset_x) / d.scale;
+      if (this.is_accept_straight()) {
+        return this.snap_to_straight();
+      }
+    };
+
+    Transition.prototype.snap_to_straight = function() {
+      this.line_angle_adjustment = (this.perpendicular_part < 0) * Math.PI;
+      return this.perpendicular_part = 0;
+    };
+
+    return Transition;
 
   })();
 
