@@ -1209,45 +1209,6 @@ class Transition
     @perpendicular_part = 0
 
 
-class State
-
-  constructor: (@x, @y, @parent) ->
-
-    #Default values for a new state.
-    #(Abstract these somewhere else for easy config?)
-    
-    #Node radius, in pixels.
-    @radius = 55
-
-    #Node outline, in pixels.
-    @outline = 2
-
-    #Node foreground, background, and "selected" colors, as accepted by CSS.
-    @fg_color = 'black'
-    @bg_color = 'white'
-    @selected_color = 'blue'
-
-    #Node font, as accepted by CSS.
-    @font = '16px "Droid Sans", sans-serif'
-
-    #Output padding, font, and color.
-    @output_padding = 14
-    @output_font = '20px "Inconsolata", monospace'
-    @output_color = '#101010'
-    
-    @mouse_offset_x = 0
-    @mouse_offset_y = 0
-
-    @is_accept_state = false
-
-    #Node label, and output value.
-    @text = ''
-    @outputs = ''
-
-  set_mouse_start: (x, y) ->
-    @mouse_offset_x = @x - x
-    @mouse_offset_y = @y - y
-    
 
 #
 # Low-level representation of an arrow's path.
@@ -1326,45 +1287,46 @@ class CurvedPath
   #
   contains_point: (x, y, tolerance = 20) ->
 
-    #compute the distance from the center of the arc to the given point
+    #Determine the distance from the curve upon which this path is drawn.
     dx = x - @circle.x
     dy = y - @circle.y
-    distance = Math.sqrt(dx * dx + dy * dy) - @circle.radius
+    distance = Math.abs(Math.sqrt(dx * dx + dy * dy) - @circle.radius)
 
-    #if the total distance from the node's circle is less than the tolerance,
-    #determine if we're very close to the line by analyzing angles
-    if Math.abs(distance) < tolerance
+    #If the distance is greater than our tolerance, the point can't be on our path.
+    if distance > tolerance
+        return false
+   
+    #othwise, check to see if th point follows the curveature of the circle
+    else
 
+      #determine the approximate angle from the center of the circle
       angle = Math.atan(dx, dy)
      
-      #if the line is reversed, switch the start and end
-      #angles
+      #if the line is reversed, switch the start and end angles
       if @reversed
         start_angle = @end.angle
         end_angle = @start.angle
+
       #otherwise, use them directly
       else
         start_angle = @start.angle
         end_angle = @end.angle
 
-      #if the end angle is less than the start angle, normalize it by adding 180 degrees
+      #if the end angle is less than the start angle, normalize it by adding 360 degrees
       if end_angle < start_angle
         end_angle += Math.PI * 2
 
-      #if the angle is less than the start angle, normalize it by adding 180 degrees
+      #if the angle is less than the start angle, normalize it by adding 360 degrees
       if angle < start_angle
         angle += Math.PI * 2
 
-      #if the angle less than the end angle, normalize it
+      #if the angle less than the end angle, normalize it by adding 360
       else if angle > end_angle
         angle -= Math.PI * 2
 
       #if the angle is between the start and end angle, it's a match
       return angle > start_angle and angle < end_angle
 
-    #otherwise, return false
-    else
-      return false
 
       
 
@@ -1411,7 +1373,140 @@ class CurvedPath
     @end.angle - if @reversed then -1 * (Math.PI / 2) else (Math.PI / 2)
 
 
+class State
 
+  constructor: (@x, @y, @parent) ->
+
+    #Default values for a new state.
+    #(Abstract these somewhere else for easy config?)
+    
+    #Node radius, in pixels.
+    @radius = 55
+    @accept_radius = 50
+
+    #Node outline, in pixels.
+    @outline = 2
+
+    #Node foreground, background, and "selected" colors, as accepted by CSS.
+    @fg_color = 'black'
+    @bg_color = 'white'
+    @selected_color = 'blue'
+
+    #Node font, as accepted by CSS.
+    @font = '16px "Droid Sans", sans-serif'
+
+    #Output padding, font, and color.
+    @output_padding = 14
+    @output_font = '20px "Inconsolata", monospace'
+    @output_color = '#101010'
+    
+    #Set the "grab point", which is the internal point at
+    #which the node is being grabbed. Used for mouse-based movement.
+    @grab_point =
+      x: 0
+      y: 0
+
+    @is_accept_state = false
+
+    #Node label, and output value.
+    @text = ''
+    @outputs = ''
+
+  #
+  # 
+  #
+  closest_point_on_circle: (x, y) ->
+
+    #Create a triangle with three legs:
+    #-A hypotenuse, which connects the given point to the center of the circle, and
+    #-Two legs, which represent the X and Y components of the hypotenuse. 
+    dx = x - @x
+    dy = y - @y
+    hypotenuse = Math.sqrt(dx * dx + dy * dy)
+
+    #Find the point where the hypotenuse touches the circle:
+    # 1) Create a  "similar" triangle whose hypotenuse is equal to the circle's radius.
+    # 2) Break that radius into x, and y components using the triangle's similarity, 
+    #    nothing that the ratio of the new hypotenuse ("radius") and the old hypotenuse
+    #    has to be the same as the ratio between the new legs and old legs.
+    x_leg = dx * (@radius / hypotenuse)
+    y_leg = dy * (@radius / hypotenuse)
+
+    #Add the length of the X and Y legs to the centerpoint of the circle, 
+    #finding the x, y coordinates of the cloest point.
+    point = 
+      x: @x + x_leg
+      y: @y + y_leg
+
+    #And return that point.
+    return point
+
+
+  draw_using: (context) ->
+
+    #set up the brush which will be used to draw the state
+    context.lineWidth = @outline
+    context.fillStyle = @bg_color
+    context.strokeStyle = @get_fg_color()
+
+    #create the state's circle
+    context.beginPath()
+    context.arc(@x, @y, @radius, 0, Math.PI * 2, false)
+    context.fill()
+    context.stroke()
+
+    #if this is an accept state, draw a second circle
+    if @is_accept_state
+      context.beginPath()
+      context.arc(@x, @y, @accept_radius, Math.PI * 2, false)
+      context.stroke()
+
+    #add the state's name
+    context.fillStyle = @get_fg_color()
+    FSMDesigner.draw_text(context, @text, @x, @y, @selected and not @in_output_mode, @font)
+
+    #draw the state's moore outputs
+    context.fillStyle = @get_fg_color(true)
+    output_y = @y + @radius + @output_padding
+    FSMDesigner.draw(context, @outputs, @x, output_y, @selected and @in_output_mode, @output_font)
+
+
+
+
+  #
+  # Returns the color with which this state should be drawn,
+  # accounting for modifiers (e.g. selected).
+  #
+  get_fg_color: ->
+    if @selected() then @selected_color else @fg_color
+
+  move_to: (x, y) ->
+    #TODO: pull away the mouse offset!
+    @x = x 
+    @y = y
+
+  #
+  # Move the given state to the given X, Y coordinates,
+  # accounting for the point at which the state was "grabbed".
+  #
+  move_with_offset: (x, y) ->
+    @x = x + @grab_point.x
+    @y = y + @grab_point.y
+
+
+  #
+  # Returns true iff the current object is selected.
+  #
+  selected: ->
+    @parent.selected is this
+
+  #
+  # Sets the mouse offset, which identifies 
+  #
+  set_mouse_start: (x, y) ->
+    @grab_point =
+      x: @x - x
+      y: @y - y
 
 
 
