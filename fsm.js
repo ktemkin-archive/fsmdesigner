@@ -37,9 +37,64 @@
 
 
 (function() {
-  var CurvedPath, FSMDesigner, State, StraightPath, Transition,
+  var CircularPath, CrossBrowserUtils, CurvedPath, FSMDesigner, ResetTransition, SelfTransition, State, StraightPath, Transition, TransitionPlaceholder,
     __indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; },
-    __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
+    __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
+    __hasProp = {}.hasOwnProperty,
+    __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; };
+
+  CrossBrowserUtils = (function() {
+
+    function CrossBrowserUtils() {}
+
+    CrossBrowserUtils.true_event = function(e) {
+      return e || window.event;
+    };
+
+    CrossBrowserUtils.element_position = function(e) {
+      var element, position, x, y;
+      e = CrossBrowserUtils.true_event();
+      element = e.target || e.srcElement;
+      x = 0;
+      y = 0;
+      while (element.offsetParent) {
+        x += element.offsetLeft;
+        y += element.offsetTop;
+        element = element.offsetParent;
+      }
+      return position = {
+        x: x,
+        y: y
+      };
+    };
+
+    CrossBrowserUtils.mouse_position = function(e) {
+      var mouse_position;
+      e = CrossBrowserUtils.true_event();
+      return mouse_position = {
+        x: e.pageX || e.clientX + document.body.scrollLeft + document.documentElement.scrollLeft,
+        y: e.pageY || e.clientY + document.body.scrollTop + document.documentElement.scrollTop
+      };
+    };
+
+    CrossBrowserUtils.relative_mouse_position = function(e) {
+      var element, mouse, relative_position;
+      element = CrossBrowserUtils.element_position(e);
+      mouse = CrossBrowserUtils.mouse_position(e);
+      return relative_position = {
+        x: mouse.x - element.x,
+        y: mouse.y - element.y
+      };
+    };
+
+    CrossBrowserUtils.key_code = function(e) {
+      e = CrossBrowserUtils.true_event();
+      return e.which || e.keyCode;
+    };
+
+    return CrossBrowserUtils;
+
+  })();
 
   FSMDesigner = (function() {
 
@@ -49,17 +104,19 @@
 
     FSMDesigner.prototype.undo_history_size = 32;
 
-    FSMDesigner.prototype.originalClick = null;
+    FSMDesigner.prototype.original_click = null;
 
-    FSMDesigner.prototype.cursorVisible = true;
+    FSMDesigner.prototype.caret_visible = true;
 
-    FSMDesigner.prototype.selectedObject = null;
+    FSMDesigner.prototype.caret_time = 500;
 
-    FSMDesigner.prototype.currentTransition = null;
+    FSMDesigner.prototype.selected = null;
 
-    FSMDesigner.prototype.movingObject = false;
+    FSMDesigner.prototype.current_transition = null;
 
-    FSMDesigner.prototype.inOutputMode = false;
+    FSMDesigner.prototype.moving_object = false;
+
+    FSMDesigner.prototype.in_output_mode = false;
 
     FSMDesigner.prototype.textEntryTimeout = null;
 
@@ -83,9 +140,6 @@
         'mousedown': function(e) {
           return _this.handle_mousedown(e);
         },
-        'doubleclock': function(e) {
-          return _this.handle_doubleclick(e);
-        },
         'mousemove': function(e) {
           return _this.handle_mousemove(e);
         },
@@ -93,7 +147,10 @@
           return _this.handle_mouseup(e);
         },
         'mousedown': function(e) {
-          return _this.handle_mouseup(e);
+          return _this.handle_mousedown(e);
+        },
+        'dblclick': function(e) {
+          return _this.handle_doubleclick(e);
         },
         'drop': function(e) {
           return _this.handle_drop(e);
@@ -153,19 +210,29 @@
       return this.draw();
     };
 
-    FSMDesigner.prototype.create_state_at_location = function(x, y) {
+    FSMDesigner.convert_latex_shorthand = function(text) {
+      return text;
+    };
+
+    FSMDesigner.prototype.create_state_at_location = function(x, y, dont_draw) {
+      if (dont_draw == null) {
+        dont_draw = false;
+      }
+      console.log("Creating state at " + x + " " + y + "!");
       this.save_undo_step();
       this.selected = new State(x, y, this);
       this.states.push(this.selected);
       this.reset_caret();
-      return this.draw();
+      if (!dont_draw) {
+        return this.draw();
+      }
     };
 
     FSMDesigner.prototype.create_transition_cue = function(mouse) {
       var target_state;
       target_state = this.find_state_at_position(mouse.x, mouse.y);
       if (this.selected != null) {
-        this.current_transition = target_state === this.selected(new SelfTransition(this.selected, mouse, this)) ? void 0 : (typeof target_state === "function" ? target_state(new Transition(this.selected, target_state, this)) : void 0) ? void 0 : new TemporaryTransition(this.selected.closest_point_on_circle(mouse.x, mouse.y), mouse, this);
+        this.current_transition = target_state === this.selected(new SelfTransition(this.selected, this, mouse)) ? void 0 : (typeof target_state === "function" ? target_state(new Transition(this.selected, target_state, this)) : void 0) ? void 0 : new TemporaryTransition(this.selected.closest_point_on_circle(mouse.x, mouse.y), mouse, this);
       } else {
         this.current_transition = (typeof target_state === "function" ? target_state(new ResetTransition(target_state, this.original_click, this)) : void 0) ? void 0 : new TemporaryTransition(this.original_click, mouse);
       }
@@ -207,7 +274,7 @@
         text: state.text,
         outputs: state.outputs,
         is_accept_state: state.is_accept_state,
-        radius: radius
+        radius: state.radius
       };
       return dehydrated;
     };
@@ -318,8 +385,9 @@
     FSMDesigner.prototype.draw = function() {
       var context;
       context = this.canvas.getContext('2d');
+      this.handle_resize();
       this.draw_using(context);
-      return this.autosave;
+      return this.autosave();
     };
 
     FSMDesigner.draw_text = function(context, text, x, y, is_selected, font, angle) {
@@ -431,12 +499,12 @@
 
     FSMDesigner.prototype.handle_doubleclick = function(e) {
       var mouse;
-      handle_modal_behavior();
-      mouse = cross_browser_relative_mouse_position(e);
+      mouse = CrossBrowserUtils.relative_mouse_position(e);
       this.selected = this.find_object_at_position(mouse.x, mouse.y);
-      this.reset_text_extry();
+      this.reset_text_entry();
       this.in_output_mode = false;
       if (this.selected == null) {
+        console.log(mouse);
         this.create_state_at_location(mouse.x, mouse.y);
       } else if (this.selected instanceof State) {
         this.in_output_mode = true;
@@ -446,7 +514,7 @@
 
     FSMDesigner.prototype.handle_keydown = function(e) {
       var key;
-      key = cross_browser_key(e);
+      key = CrossBrowserUtils.key_code(e);
       if (key === FSMDesigner.KeyCodes.SHIFT) {
         this.modalBehavior = FSMDesigner.ModalBehaviors.CREATE;
       }
@@ -470,7 +538,7 @@
       if (!this.has_focus()) {
         return;
       }
-      key = cross_browser_key(e);
+      key = CrossBrowserUtils.key_code(e);
       if (FSMDesigner.keypress_is_printable(e)) {
         this.handle_text_entry(key);
         return false;
@@ -490,7 +558,7 @@
 
     FSMDesigner.prototype.handle_keyup = function(e) {
       var key;
-      key = cross_browser_key(e);
+      key = CrossBrowserUtils.key_code(e);
       if (key === FSMDesigner.KeyCodes.SHIFT) {
         return this.modalBehavior = FSMDesigner.ModalBehaviors.POINTER;
       }
@@ -501,11 +569,11 @@
       if (this.dialog_open) {
         return;
       }
-      mouse = cross_browser_relative_mouse_position(e);
+      mouse = CrossBrowserUtils.relative_mouse_position(e);
       this.moving_object = false;
       this.in_output_mode = false;
       this.original_click = false;
-      this.reset_text_extry();
+      this.reset_text_entry();
       this.selected = this.find_object_at_position(mouse.x, mouse.y);
       if (this.selected != null) {
         if (this.modal_behavior === FSMDesigner.ModalBehaviors.CREATE && this.selected instanceof State) {
@@ -529,13 +597,31 @@
       if (this.dialog_open) {
         return;
       }
-      mouse = cross_browser_relative_mouse_position(e);
+      mouse = CrossBrowserUtils.relative_mouse_position(e);
       if (this.current_transition != null) {
         this.create_transition_cue(mouse);
       }
-      if (this.moving_object != null) {
-        return this.handle_object_move(move);
+      if (this.moving_object) {
+        return this.handle_object_move(mouse);
       }
+    };
+
+    FSMDesigner.prototype.handle_mouseup = function(e) {
+      if (this.dialog_open) {
+        return;
+      }
+      this.moving_object = false;
+      if (this.current_transition != null) {
+        if (!this.current_transition instanceof TransitionPlaceholder) {
+          this.save_undo_step();
+          this.selected = this.current_link;
+          this.rndeset_text_entry();
+          this.transitions.push(this.current_link);
+          this.reset_caret();
+        }
+      }
+      this.current_transition = null;
+      return this.draw();
     };
 
     FSMDesigner.prototype.handle_object_move = function(mouse) {
@@ -590,19 +676,19 @@
 
     FSMDesigner.keypress_is_printable = function(e) {
       var key;
-      key = cross_browser_key(e);
+      key = CrossBrowserUtils.key_code(e);
       return key >= 0x20 && key <= 0x7E && !e.metaKey && !e.altKey && !e.ctrlKey;
     };
 
     FSMDesigner.keypress_represents_redo = function(e) {
       var key;
-      key = cross_browser_key(e);
+      key = CrossBrowserUtils.key_code(e);
       return (key === FSMDesigner.KeyCodes.Y && e.ctrlKey) || (key === FSMDesigner.KeyCodes.REDO) || (key === FSMDesigner.KeyCodes.z && e.ctrlKey && e.shiftKey) || (key === FSMDesigner.KeyCodes.UNDO && e.shiftKey);
     };
 
     FSMDesigner.keypress_represents_undo = function(e) {
       var key;
-      key = cross_browser_key(e);
+      key = CrossBrowserUtils.key_code(e);
       return (key === FSMDesigner.KeyCodes.z && e.ctrlKey && !e.shiftKey) || (key === FSMDesigner.KeyCodes.UNDO && !e.shiftKey);
     };
 
@@ -707,6 +793,24 @@
       }
     };
 
+    FSMDesigner.prototype.reset_caret = function() {
+      var _this = this;
+      clearInterval(this.caret_timer);
+      this.caret_timer = setInterval((function() {
+        return _this.toggle_caret();
+      }), this.caret_time);
+      return this.caret_visible = true;
+    };
+
+    FSMDesigner.prototype.handle_resize = function() {
+      var context;
+      context = this.canvas.getContext('2d');
+      context.canvas.width = window.innerWidth;
+      context.canvas.height = window.innerHeight - document.getElementById("toolbar").offsetHeight;
+      context.canvas.style.width = window.innerWidth + 'px';
+      return context.canvas.style.height = (window.innerHeight - document.getElementById('toolbar').offsetHeight) + 'px';
+    };
+
     FSMDesigner.prototype.save_file_data_uri = function() {
       var content, uri_content;
       content = this.serialize();
@@ -716,7 +820,7 @@
 
     FSMDesigner.prototype.save_undo_step = function() {
       var last_state, state;
-      state = this.get_state();
+      state = this.dehydrate();
       last_state = this.undo_stack.slice(-1);
       if (FSMDesigner.states_equivalent(state, last_state)) {
         return;
@@ -731,7 +835,7 @@
       if (this.redo_stack.length >= this.redo_history_size) {
         this.redo_stack.shift();
       }
-      return this.redo_stack.push(this.get_state);
+      return this.redo_stack.push(this.dehydrate());
     };
 
     FSMDesigner.prototype.save_text_undo_step = function(force) {
@@ -753,7 +857,7 @@
     };
 
     FSMDesigner.prototype.serialize = function() {
-      return JSON.stringify(this.get_state());
+      return JSON.stringify(this.dehydrate());
     };
 
     FSMDesigner.prototype.start_moving_selected = function() {
@@ -765,6 +869,11 @@
         _base.set_mouse_start(mouse.x, mouse.y);
       }
       return this.reset_caret();
+    };
+
+    FSMDesigner.prototype.toggle_caret = function() {
+      this.caret_visible = !this.caret_visible;
+      return this.draw();
     };
 
     FSMDesigner.prototype.undo = function() {
@@ -921,34 +1030,123 @@
 
   })();
 
-  State = (function() {
+  SelfTransition = (function(_super) {
 
-    function State(x, y, parent) {
-      this.x = x;
-      this.y = y;
-      this.parent = parent;
-      this.radius = 55;
-      this.outline = 2;
-      this.fg_color = 'black';
-      this.bg_color = 'white';
-      this.selected_color = 'blue';
-      this.font = '16px "Droid Sans", sans-serif';
-      this.output_padding = 14;
-      this.output_font = '20px "Inconsolata", monospace';
-      this.output_color = '#101010';
-      this.mouse_offset_x = 0;
-      this.mouse_offset_y = 0;
-      this.is_accept_state = false;
-      this.text = '';
-      this.outputs = '';
+    __extends(SelfTransition, _super);
+
+    function SelfTransition(source, parent, created_at) {
+      if (created_at == null) {
+        created_at = null;
+      }
+      SelfTransition.__super__.constructor.call(this, source, source, parent);
+      this.scale = 0.75;
+      this.circumference_stroke = 0.8;
+      this.snap_to_right_angle_radians = 0.1;
+      this.anchor_angle = 0;
+      this.mouse_offset_angle = 0;
+      if (created_at != null) {
+        this.move_to(created_at.x, created_at.y);
+      }
+      ({
+        move_to: function(x, y) {
+          var angle, dx, dy, right_angle;
+          dx = x - this.source.x;
+          dy = y - this.source.y;
+          angle = Math.atan2(dy, dx) + this.mouse_offset_angle;
+          right_angle = Math.round(angle / (Math.PI / 2)) * (Math.PI / 2);
+          if (Math.abs(angle - right_angle) < this.snap_to_right_angle_radians) {
+            angle = right_angle;
+          }
+          if (angle < -Math.PI) {
+            angle += 2 * Math.PI;
+          }
+          if (angle > Math.PI) {
+            angle -= 2 * Math.PI;
+          }
+          return this.angle = angle;
+        },
+        get_path: function() {
+          var circle, diameter_scale, end, end_angle, start, start_angle;
+          diameter_scale = this.scale * 2;
+          circle = {
+            x: this.source.x + this.diameter_scale * this.source.radius * Math.cos(this.anchor_angle),
+            y: this.source.y + this.diameter_scale * this.source.radius * Math.sin(this.anchor_angle),
+            radius: this.scale * this.source.radius
+          };
+          start_angle = this.anchor_angle - Math.PI * this.circumference_stroke;
+          start = {
+            x: circle.x + circle.radius * Math.cos(start_angle),
+            y: circle.y + circle.radius * Math.sin(start_angle),
+            angle: start_angle
+          };
+          end_angle = this.anchor_angle + Math.PI * this.circumference_stroke;
+          end = {
+            x: circle.x + circle.radius * Math.cos(end_angle),
+            y: circle.y + circle.radius * Math.sin(end_angle),
+            angle: end_angle
+          };
+          return new CircularPath(start, end, circle, this.anchor_angle, this.circumference_stroke);
+        }
+      });
     }
 
-    State.prototype.set_mouse_start = function(x, y) {
-      this.mouse_offset_x = this.x - x;
-      return this.mouse_offset_y = this.y - y;
+    return SelfTransition;
+
+  })(Transition);
+
+  ResetTransition = (function(_super) {
+
+    __extends(ResetTransition, _super);
+
+    function ResetTransition(destination, parent, position) {
+      if (position == null) {
+        position = null;
+      }
+      ResetTransition.__super__.constructor.call(this, null, destination, parent);
+      this.origin = {
+        x: 0,
+        y: 0
+      };
+      if (position != null) {
+        this.anchor_at(position.x, position.y);
+      }
+    }
+
+    ResetTransition.prototype.anchor_at = function(x, y) {
+      this.origin.x = x - this.destination.x;
+      return this.origin.y = y - this.destination.y;
     };
 
-    return State;
+    ResetTransition.prototype.get_path = function() {
+      var end, start;
+      start = {
+        x: this.destination.x + this.origin.x,
+        y: this.destination.y + this.origin.y
+      };
+      end = this.destination.closest_point_on_circle(start.x, start.y);
+      return new StraightPath(start, end);
+    };
+
+    return ResetTransition;
+
+  })(Transition);
+
+  TransitionPlaceholder = (function() {
+
+    function TransitionPlaceholder(start, end) {
+      this.start = start;
+      this.end = end;
+    }
+
+    TransitionPlaceholder.prototype.get_path = function() {
+      return new StraightPath(start, end);
+    };
+
+    TransitionPlaceholder.prototype.draw_using = function(context) {
+      return this.get_path().draw_using(context);
+    };
+
+    return TransitionPlaceholder;
 
   })();
 
@@ -976,6 +1174,12 @@
 
     StraightPath.prototype.draw_using = function(context, text, font, is_selected) {
       var text_location;
+      if (text == null) {
+        text = null;
+      }
+      if (font == null) {
+        font = null;
+      }
       if (is_selected == null) {
         is_selected = false;
       }
@@ -984,6 +1188,9 @@
       context.lineTo(this.end.x, this.end.y);
       context.stroke();
       Transition.draw_arrow(context, this.end.x, this.end.y, this.get_arrow_angle());
+      if (text == null) {
+        return;
+      }
       text_location = {
         x: (this.start.x + this.end.x) / 2,
         y: (this.start.y + this.end.y) / 2,
@@ -1017,8 +1224,10 @@
       }
       dx = x - this.circle.x;
       dy = y - this.circle.y;
-      distance = Math.sqrt(dx * dx + dy * dy) - this.circle.radius;
-      if (Math.abs(distance) < tolerance) {
+      distance = Math.abs(Math.sqrt(dx * dx + dy * dy) - this.circle.radius);
+      if (distance > tolerance) {
+        return false;
+      } else {
         angle = Math.atan(dx, dy);
         if (this.reversed) {
           start_angle = this.end.angle;
@@ -1036,8 +1245,6 @@
           angle -= Math.PI * 2;
         }
         return angle > start_angle && angle < end_angle;
-      } else {
-        return false;
       }
     };
 
@@ -1071,5 +1278,159 @@
     return CurvedPath;
 
   })();
+
+  CircularPath = (function() {
+
+    function CircularPath(start, end, circle, anchor_angle, stroke_circumference) {
+      this.start = start;
+      this.end = end;
+      this.circle = circle;
+      this.anchor_angle = anchor_angle;
+      this.stroke_circumference = stroke_circumference;
+    }
+
+    CircularPath.prototype.contains_point = function(x, y, tolerance) {
+      var distance, dx, dy;
+      if (tolerance == null) {
+        tolerance = 20;
+      }
+      dx = x - this.circle.x;
+      dy = y - this.circle.y;
+      distance = Math.abs(Math.sqrt(dx * dx + dy * dy));
+      return distance >= (radius - tolerance) && distance <= (radius + tolerance);
+    };
+
+    CircularPath.prototype.draw_using = function(context, text, font, is_selected) {
+      var text_location;
+      if (is_selected == null) {
+        is_selected = false;
+      }
+      context.beginPath();
+      context.arc(this.circle.x, this.circle.y, this.circle.radius, this.start.angle, this.end.angle, false);
+      context.stroke();
+      Transition.draw_arrow(context, this.end.x, this.end.y, this.end.angle + Math.PI * this.stroke_circumference / 2);
+      text_location = {
+        x: this.circle.x + this.circle.radius * Math.cos(this.anchor_angle),
+        y: this.circle.y + this.circle.radius * Math.sin(this.anchor_angle)
+      };
+      return FSMDesigner.drawText(context, text, text_location.x, text_location.y, this.anchor_angle, font, is_selected);
+    };
+
+    return CircularPath;
+
+  })();
+
+  State = (function() {
+
+    function State(x, y, parent) {
+      this.x = x;
+      this.y = y;
+      this.parent = parent;
+      this.radius = 55;
+      this.accept_radius = 50;
+      this.outline = 2;
+      this.fg_color = 'black';
+      this.bg_color = 'white';
+      this.selected_color = 'blue';
+      this.font = '16px "Droid Sans", sans-serif';
+      this.output_padding = 14;
+      this.output_font = '20px "Inconsolata", monospace';
+      this.output_color = '#101010';
+      this.grab_point = {
+        x: 0,
+        y: 0
+      };
+      this.is_accept_state = false;
+      this.text = '';
+      this.outputs = '';
+    }
+
+    State.prototype.closest_point_on_circle = function(x, y) {
+      var dx, dy, hypotenuse, point, x_leg, y_leg;
+      dx = x - this.x;
+      dy = y - this.y;
+      hypotenuse = Math.sqrt(dx * dx + dy * dy);
+      x_leg = dx * (this.radius / hypotenuse);
+      y_leg = dy * (this.radius / hypotenuse);
+      point = {
+        x: this.x + x_leg,
+        y: this.y + y_leg
+      };
+      return point;
+    };
+
+    State.prototype.contains_point = function(x, y, tolerance) {
+      var distance, dx, dy;
+      if (tolerance == null) {
+        tolerance = 0;
+      }
+      dx = x - this.x;
+      dy = y - this.y;
+      distance = (dx * dx) + (dy * dy);
+      return distance <= (this.radius + tolerance) * (this.radius + tolerance);
+    };
+
+    State.prototype.draw_using = function(context) {
+      var output_y;
+      context.lineWidth = this.outline;
+      context.fillStyle = this.bg_color;
+      context.strokeStyle = this.get_fg_color();
+      context.beginPath();
+      context.arc(this.x, this.y, this.radius, 0, Math.PI * 2, false);
+      context.fill();
+      context.stroke();
+      if (this.is_accept_state) {
+        context.beginPath();
+        context.arc(this.x, this.y, this.accept_radius, Math.PI * 2, false);
+        context.stroke();
+      }
+      context.fillStyle = this.get_fg_color();
+      FSMDesigner.draw_text(context, this.text, this.x, this.y, this.selected && !this.in_output_mode, this.font);
+      context.fillStyle = this.get_fg_color(true);
+      output_y = this.y + this.radius + this.output_padding;
+      return FSMDesigner.draw_text(context, this.outputs, this.x, output_y, this.selected && this.in_output_mode, this.output_font);
+    };
+
+    State.prototype.get_fg_color = function(is_output) {
+      if (is_output == null) {
+        is_output = false;
+      }
+      if (this.selected() && this.in_output_mode && is_output) {
+        return this.selected_color;
+      } else if (this.selected && this.in_output_mode) {
+        return this.fg_color;
+      } else if (this.selected && !is_output) {
+        return this.selected_color;
+      } else {
+        return this.fg_color;
+      }
+    };
+
+    State.prototype.move_to = function(x, y) {
+      this.x = x;
+      return this.y = y;
+    };
+
+    State.prototype.move_with_offset = function(x, y) {
+      this.x = x + this.grab_point.x;
+      return this.y = y + this.grab_point.y;
+    };
+
+    State.prototype.selected = function() {
+      return this.parent.selected === this;
+    };
+
+    State.prototype.set_mouse_start = function(x, y) {
+      return this.grab_point = {
+        x: this.x - x,
+        y: this.y - y
+      };
+    };
+
+    return State;
+
+  })();
+
+  window.FSMDesigner = FSMDesigner;
 
 }).call(this);

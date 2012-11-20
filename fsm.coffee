@@ -33,6 +33,74 @@
  OTHER DEALINGS IN THE SOFTWARE.
 ###
 
+class CrossBrowserUtils
+
+  @true_event: (e) ->
+    e or window.event
+
+  #
+  # Finds the position of the element which triggered the given event.
+  #
+  @element_position: (e) ->
+
+    #Find the true event object for the given event.
+    e = CrossBrowserUtils.true_event()
+
+    #find the element which triggered the event
+    element = e.target or e.srcElement
+    
+    x = 0
+    y = 0
+
+    #While this object is relative to another object, attempt
+    #to find the element's location _relative_ to that parent.
+    #This will eventually find the element's position relative to the document-
+    #its true, absolute position.
+    while element.offsetParent
+      x += element.offsetLeft
+      y += element.offsetTop
+      element = element.offsetParent
+
+    position =
+      x: x
+      y: y
+
+  #
+  # Finds the position of the mouse pointer, at the time that an event _e_ is fired.
+  #
+  @mouse_position: (e) ->
+
+    #Find the true event object for the given event.
+    e = CrossBrowserUtils.true_event()
+
+    #Find the mouse position via whichever method is supported:
+    #- Directly, if provided, or
+    #- Relative to the document.
+    mouse_position =
+      x: e.pageX or e.clientX + document.body.scrollLeft + document.documentElement.scrollLeft
+      y: e.pageY or e.clientY + document.body.scrollTop + document.documentElement.scrollTop
+
+  @relative_mouse_position: (e) ->
+
+    #Get the position of both the element and mouse...
+    element = CrossBrowserUtils.element_position(e)
+    mouse = CrossBrowserUtils.mouse_position(e)
+
+    #And use them to find the relative position of the mouse pointer.
+    relative_position =
+      x: mouse.x - element.x
+      y: mouse.y - element.y
+
+  @key_code: (e) ->
+    
+    #Find the true event object for the given event.
+    e = CrossBrowserUtils.true_event()
+
+    #Return whichever of the two fields was populated.
+    e.which or e.keyCode
+
+
+
 class FSMDesigner
   #Designer defaults:
   
@@ -47,12 +115,13 @@ class FSMDesigner
   #Specifies the amount of undo/redo steps would should be kept.
   undo_history_size: 32
   
-  originalClick: null
-  cursorVisible: true
-  selectedObject: null # either a Link or a Node
-  currentTransition: null  #a Link
-  movingObject: false
-  inOutputMode: false #determines if we're in edit-output mode
+  original_click: null
+  caret_visible: true
+  caret_time: 500
+  selected: null # either a Link or a Node
+  current_transition: null  #a Link
+  moving_object: false
+  in_output_mode: false #determines if we're in edit-output mode
   
   textEntryTimeout: null
   textEnteredRecently: false
@@ -71,10 +140,10 @@ class FSMDesigner
     #map the appropriate handler for each of the events in the HTML5 drawing canvas
     canvas_handlers = 
       'mousedown':   (e) => @handle_mousedown(e)
-      'doubleclock': (e) => @handle_doubleclick(e)
       'mousemove':   (e) => @handle_mousemove(e)
       'mouseup':     (e) => @handle_mouseup(e)
-      'mousedown':   (e) => @handle_mouseup(e)
+      'mousedown':   (e) => @handle_mousedown(e)
+      'dblclick':    (e) => @handle_doubleclick(e)
       'drop':        (e) => @handle_drop(e)
 
     #and bind the events to the canvas
@@ -127,10 +196,15 @@ class FSMDesigner
     #and redraw
     @draw()
 
+  @convert_latex_shorthand: (text) ->
+    text #FIXME TODO #FIXME
+
   #
   # Creates a new state at the given x, y location.
   #
-  create_state_at_location: (x, y) ->
+  create_state_at_location: (x, y, dont_draw=false) ->
+
+    console.log "Creating state at #{x} #{y}!"
 
     #save the system's state before the creation of the new node
     @save_undo_step()
@@ -145,7 +219,8 @@ class FSMDesigner
     @reset_caret()
 
     #draw the FSM with the new state
-    @draw()
+    unless dont_draw
+      @draw() 
 
 
 
@@ -163,7 +238,7 @@ class FSMDesigner
 
         @current_transition = 
           #if the target state is currently selected, then create a self-loop from the state to itself
-          if target_state is @selected new SelfTransition(@selected, mouse, @)
+          if target_state is @selected new SelfTransition(@selected, @, mouse)
 
           #otherwise, if have a target state, create a new transition going _to_ that state
           else if target_state? new Transition(@selected, target_state, @)
@@ -209,7 +284,7 @@ class FSMDesigner
       text: state.text
       outputs: state.outputs
       is_accept_state: state.is_accept_state
-      radius: radius
+      radius: state.radius
 
     return dehydrated
 
@@ -300,11 +375,14 @@ class FSMDesigner
     #get the canvas's 2D drawing "context"
     context = @canvas.getContext('2d')
 
+    #XXX FIXME XXX
+    @handle_resize()
+
     #use it to render the FSM
     @draw_using(context)
 
     #and autosave the FSM
-    @autosave
+    @autosave()
 
   #
   # Renders a string of text on the given canvas.
@@ -462,22 +540,23 @@ class FSMDesigner
   handle_doubleclick: (e) ->
 
     #TODO: handle modal behavior in event queue
-    handle_modal_behavior()
+    #@handle_modal_behavior()
 
     #get the mouse's position relative to the canvas
-    mouse = cross_browser_relative_mouse_position(e)
+    mouse = CrossBrowserUtils.relative_mouse_position(e)
 
     #select the object at the given position
     @selected = @find_object_at_position(mouse.x, mouse.y)
 
     #as we've now selected a different object, reset the text undo timer
-    @reset_text_extry()
+    @reset_text_entry()
 
     #exit output entry mode
     @in_output_mode = false
 
     #if we don't have a currently selected object, create a new state at the current location
     if not @selected?
+      console.log mouse
       @create_state_at_location(mouse.x, mouse.y)
 
     #otherwise, if we're clicking on a State
@@ -494,7 +573,7 @@ class FSMDesigner
   handle_keydown: (e) ->
 
     #get the keycode of the key that triggered this handler
-    key = cross_browser_key(e)
+    key = CrossBrowserUtils.key_code(e)
 
     #if the user has just pressed the shift key, switch modes accordingly
     if key is FSMDesigner.KeyCodes.SHIFT
@@ -533,7 +612,7 @@ class FSMDesigner
     return unless @has_focus()
 
     #get the keycode of the key that triggered this event
-    key = cross_browser_key(e)
+    key = CrossBrowserUtils.key_code(e)
 
     #if we have a printable key, handle text entry
     if FSMDesigner.keypress_is_printable(e) 
@@ -558,7 +637,7 @@ class FSMDesigner
   handle_keyup: (e) ->
 
     #get the keycode of the key that triggered this event
-    key = cross_browser_key(e)
+    key = CrossBrowserUtils.key_code(e)
 
     #if the event was the shift key being released, switch back to normal "pointer" mode
     if key is FSMDesigner.KeyCodes.SHIFT
@@ -573,13 +652,13 @@ class FSMDesigner
     return if @dialog_open
 
     #get the mouse position, relative to the canvas
-    mouse = cross_browser_relative_mouse_position(e)
+    mouse = CrossBrowserUtils.relative_mouse_position(e)
 
     #reset the current modal flags:
     @moving_object = false
     @in_output_mode = false
     @original_click = false
-    @reset_text_extry()
+    @reset_text_entry()
 
     #find an object at the given position, if one exists
     @selected = @find_object_at_position(mouse.x, mouse.y)
@@ -620,7 +699,7 @@ class FSMDesigner
     return if @dialog_open
 
     #get the position of the mouse, relative to the canvas
-    mouse = cross_browser_relative_mouse_position(e)
+    mouse = CrossBrowserUtils.relative_mouse_position(e)
 
     #if we're in the middle of creating a transition, render a visual cue indicating the
     #transition to be created
@@ -628,8 +707,44 @@ class FSMDesigner
       @create_transition_cue(mouse)
 
     #if we're in the middle of moving an object, handle its movement
-    if @moving_object?
-      @handle_object_move(move)
+    if @moving_object
+      @handle_object_move(mouse)
+
+  #
+  # Handle mouse-up events.
+  #
+  handle_mouseup: (e) ->
+
+    #ignore mouse releases when a dialog is open
+    return if @dialog_open
+
+    #since we've released the mouse, we're not longer moving an object
+    @moving_object = false
+
+    #If we're in the middle of creating a transition,
+    if @current_transition?
+
+      #and that transition is a placeholder, convert it to a normal link
+      if not @current_transition instanceof TransitionPlaceholder
+
+        #save an undo point
+        @save_undo_step()
+
+        #select the newly-created object
+        @selected = @current_link
+
+        #Since we've switched to a new object, reset text entry.
+        @rndeset_text_entry()
+
+        #add the given link to the FSM
+        @transitions.push(@current_link)
+
+        #reset the caret
+        @reset_caret()
+
+    @current_transition = null
+    @draw()
+
 
 
   #
@@ -710,7 +825,7 @@ class FSMDesigner
   @keypress_is_printable: (e) ->
     
     #return true iff the key is in the alpha-numeric range, and none of the modifiers are pressed
-    key = cross_browser_key(e)
+    key = CrossBrowserUtils.key_code(e)
     key >= 0x20 and key <= 0x7E and not e.metaKey and not e.altKey and not e.ctrlKey
 
   #
@@ -719,7 +834,7 @@ class FSMDesigner
   @keypress_represents_redo: (e) ->
 
     #get the keycode for the key that was pressed
-    key = cross_browser_key(e)
+    key = CrossBrowserUtils.key_code(e)
     
     #return true iff one of our accepted redo combinations is present
     (key is FSMDesigner.KeyCodes.Y and e.ctrlKey) or                  #pure CTRL+Y
@@ -734,7 +849,7 @@ class FSMDesigner
   @keypress_represents_undo: (e) ->
 
     #get the keycode for the key that was pressed
-    key = cross_browser_key(e)
+    key = CrossBrowserUtils.key_code(e)
 
     #return true iff one our accepted undo combinations is present
     (key is FSMDesigner.KeyCodes.z and e.ctrlKey and not e.shiftKey) or #pure CTRL+Z (but not CTRL+Shift+Z)
@@ -875,9 +990,39 @@ class FSMDesigner
       clearTimeout(@text_entry_timeout)
       @text_entry_timeout = null
 
+  #
+  # Resets the state of the text-entry caret for this FSMDesigner.
+  #
+  reset_caret: ->
 
+    #Cancel any existing caret-creation interval...
+    clearInterval(@caret_timer)
+
+    #... and request that the caret toggle, when appropriate.
+    @caret_timer = setInterval((=> @toggle_caret()), @caret_time)
+
+    #Ensure the caret starts off visible.
+    @caret_visible = true
+
+  #
+  # Handles resizing of the parent window
+  # Automatically rescales the canvas's context to match the new size of the canvas.
+  #
+  handle_resize: ->
+  
+    #get the canvas's 2D drawing "context"
+    context = @canvas.getContext('2d')
+
+    #TODO: ABSTRACT ME AWAAAAY
+    context.canvas.width = window.innerWidth
+    context.canvas.height = window.innerHeight - document.getElementById("toolbar").offsetHeight
+    context.canvas.style.width = window.innerWidth + 'px'
+    context.canvas.style.height = (window.innerHeight - document.getElementById('toolbar').offsetHeight) + 'px'
+
+  #
   #Saves a FSM file using a Data URI.
   #This method is not preferred, but will be used if Flash cannot be found.
+  #
   save_file_data_uri: ->
     
     #get a serialization of the FSM's state, for saving
@@ -895,7 +1040,7 @@ class FSMDesigner
   save_undo_step: ->
 
     #get a deep copy of the current state
-    state = @get_state()
+    state = @dehydrate()
 
     #and get the most recent undo step
     last_state = @undo_stack[-1..]
@@ -919,7 +1064,7 @@ class FSMDesigner
       @redo_stack.shift()
 
     #push the system's state onto the redo stack
-    @redo_stack.push(@get_state)
+    @redo_stack.push(@dehydrate())
 
   #
   # Saves an undo step.
@@ -947,7 +1092,7 @@ class FSMDesigner
   #Return a serialization of the FSMDesginer, appropriate for saving
   #
   serialize: ->
-    JSON.stringify(@get_state()) 
+    JSON.stringify(@dehydrate()) 
 
   #
   # Put the deisgner into object movement mode.
@@ -970,6 +1115,13 @@ class FSMDesigner
     #reset the text-entry caret
     @reset_caret()
 
+  #
+  # Toggles the visibility of the caret.
+  #
+  toggle_caret: ->
+    @caret_visible = not @caret_visible
+    @draw()
+
   #Performs an "undo", undoing the most recent user action.
   undo: ->
 
@@ -987,7 +1139,9 @@ class FSMDesigner
   @states_equivalent: (a, b) ->
     JSON.stringify(a) == JSON.stringify(b)
 
-
+#
+# Represents a generic FSM state transition.
+#
 class Transition
 
   constructor: (@source, @destination, @parent) ->
@@ -1065,13 +1219,6 @@ class Transition
     #and request that it draw itself
     @get_path().draw_using(context, @text, @font, @is_selected())
     
-  
-
-
-    
-
-
-
 
   #
   # Returns the total displacement between the source and destination states,
@@ -1209,6 +1356,167 @@ class Transition
     @perpendicular_part = 0
 
 
+#
+# Special case "self-loop" transition, which represents a condition under which the FSM remains in the same state.
+#
+class SelfTransition extends Transition
+
+  constructor: (source, parent, created_at=null) ->
+
+    #create the basic transition from this object
+    super(source, source, parent)
+
+    #Default radius for this transition, as a proportion of the owning node's radius.
+    @scale = 0.75
+
+    #Default drawn circumference for this circle, as a proportion of the circumference 
+    #of the circle this transition is curved around.
+    @circumference_stroke = 0.8
+
+    #Determine the maximum offset angle which should be considered aligned to a "right" angle.
+    @snap_to_right_angle_radians = 0.1
+
+    #Initially, assume that the self-loop is attached directly above the given state.
+    @anchor_angle = 0
+
+    #?
+    @mouse_offset_angle = 0
+
+    #If we have information about the point at which this node was created,
+    #use it to set the arc's location.
+    if created_at?
+      @move_to(created_at.x, created_at.y)
+
+ 
+    #
+    # Move the self-loop to the position closest to the given x, y coordinates.
+    #
+    move_to:  (x, y) ->
+
+      #find the difference between the center of the origin node
+      #and the given point
+      dx = x - @source.x
+      dy = y - @source.y
+
+      #and use that to determine the angle where the self-loop should be placed
+      angle = Math.atan2(dy, dx) + @mouse_offset_angle
+
+      #Determine the nearest right angle to our current position.
+      right_angle = Math.round(angle / (Math.PI / 2)) * (Math.PI / 2)
+
+      #If we're within our "snap" distance from a right angle, snap to that right angle.
+      if Math.abs(angle - right_angle) < @snap_to_right_angle_radians
+        angle = right_angle
+
+      #If we're less than -Pi, normalize by adding 360, so our result fits in [-Pi, Pi]
+      if angle < -Math.PI
+        angle += 2 * Math.PI
+
+      #If we're less than Pi, normalize by adding 360, so our result fits in [-Pi, Pi]
+      if angle > Math.PI
+        angle -= 2 * Math.PI
+
+      #Finally, apply the calculated angle. 
+      @angle = angle
+
+    #
+    # Returns the path that best renders the given transition.
+    #
+    get_path: ->
+
+      #Get the diameter scale, which is equal to twice the scale used to determine the radius.
+      diameter_scale = @scale * 2
+
+      #Determine the location and radius for the loop's rendering circle.
+      circle =
+        x: @source.x + @diameter_scale * @source.radius * Math.cos(@anchor_angle)
+        y: @source.y + @diameter_scale * @source.radius * Math.sin(@anchor_angle)
+        radius: @scale * @source.radius
+
+      #Compute the starting position of the loop.
+      #TODO: Figure out these magic numbers?
+      start_angle = @anchor_angle - Math.PI * @circumference_stroke
+      start =
+        x: circle.x + circle.radius * Math.cos(start_angle)
+        y: circle.y + circle.radius * Math.sin(start_angle)
+        angle: start_angle
+
+      end_angle = @anchor_angle + Math.PI * @circumference_stroke
+      end =
+        x: circle.x + circle.radius * Math.cos(end_angle)
+        y: circle.y + circle.radius * Math.sin(end_angle)
+        angle: end_angle
+
+
+      new CircularPath(start, end, circle, @anchor_angle, @circumference_stroke)
+
+
+#
+# Represents a "reset transition", which enters a state from the "background".
+#
+class ResetTransition extends Transition
+
+  #
+  # Creates a new reset-transition.
+  #
+  constructor: (destination, parent, position=null) ->
+
+    #Create a transition which has no source, but has a known destination.
+    super(null, destination, parent)
+
+    #Assume an origin of zero, unless otherwise specified.
+    #Note that origin is _relative_ to the destination state- this allows reset nodes
+    #to move with their target state.
+    @origin = 
+      x: 0 
+      y: 0
+
+    #If we know the starting position, anchor this transition there.
+    if position?
+      @anchor_at(position.x, position.y)
+
+  #
+  # Anchors the transition at the given point.
+  #
+  anchor_at: (x, y) ->
+
+    #Compute the offset relative to the target node.
+    @origin.x = x - @destination.x
+    @origin.y = y - @destination.y
+
+    #TODO: handle snap?
+  
+  get_path: ->
+
+    #Compute the start point for the given transition by
+    #applying the origin offset.
+    start = 
+      x: @destination.x + @origin.x
+      y: @destination.y + @origin.y
+
+    #And find the end point by finding the closest point
+    #on the target state.
+    end = @destination.closest_point_on_circle(start.x, start.y)
+
+    #Create a new straight path from the origin to the node.
+    new StraightPath(start, end)
+
+class TransitionPlaceholder
+
+  constructor: (@start, @end) ->
+
+  #
+  # A transition placeholder is always composed of a straight path from the start to the end.
+  #
+  get_path: ->
+    new StraightPath(start, end)
+
+  #
+  # Renders the transition placeholder.
+  # 
+  draw_using: (context) ->
+    @get_path().draw_using(context)
+
 
 #
 # Low-level representation of an arrow's path.
@@ -1250,7 +1558,7 @@ class StraightPath
   # Renders the given transition as a straight line across
   # the provided path.
   #
-  draw_using: (context, text, font, is_selected = false) ->
+  draw_using: (context, text=null, font=null, is_selected = false) ->
 
     #draw the basic straight line
     context.beginPath()
@@ -1260,6 +1568,9 @@ class StraightPath
 
     #draw the head of the arrow on the end of the line
     Transition.draw_arrow(context, @end.x, @end.y, @get_arrow_angle()) 
+
+    #If no text was provided, return.
+    return unless text?
 
     #compute the position of the arrow's transition condition
     text_location =
@@ -1327,11 +1638,6 @@ class CurvedPath
       #if the angle is between the start and end angle, it's a match
       return angle > start_angle and angle < end_angle
 
-
-      
-
-
-
   #
   # Renders the given transition as a curved line across
   # the provided path.
@@ -1371,6 +1677,48 @@ class CurvedPath
   #
   get_arrow_angle: ->
     @end.angle - if @reversed then -1 * (Math.PI / 2) else (Math.PI / 2)
+
+
+#
+# Represents a generic circular path, such as the path which could be used to generate a self-loop.
+#
+class CircularPath
+
+  constructor: (@start, @end, @circle, @anchor_angle, @stroke_circumference) ->
+
+  #
+  # Returns true iff the given point is on the circular path.
+  #
+  contains_point: (x, y, tolerance = 20) ->
+
+    #Find the total distance from the center of the loop to the x, y coordinates.
+    dx = x - @circle.x
+    dy = y - @circle.y
+    distance = Math.abs(Math.sqrt(dx * dx + dy * dy))
+
+    #if the distance is within our tolerance of the radius, it's on our path
+    distance >= (radius - tolerance) and distance <= (radius + tolerance)
+
+  #
+  # Renders the given transition as a circle across the provided path.
+  #
+  draw_using: (context, text, font, is_selected = false) ->
+
+    #Draw the core circle that makes up the transition line.
+    context.beginPath()
+    context.arc(@circle.x, @circle.y, @circle.radius, @start.angle, @end.angle, false)
+    context.stroke()
+
+    #Draw the head of the arrow.
+    Transition.draw_arrow(context, @end.x, @end.y, @end.angle + Math.PI * @stroke_circumference / 2)
+
+    #Find the furthest point from the state...
+    text_location =
+      x: @circle.x + @circle.radius * Math.cos(@anchor_angle)
+      y: @circle.y + @circle.radius * Math.sin(@anchor_angle)
+
+    #... and render the text, there.
+    FSMDesigner.drawText(context, text, text_location.x, text_location.y, @anchor_angle, font, is_selected)
 
 
 class State
@@ -1441,7 +1789,27 @@ class State
     #And return that point.
     return point
 
+  #
+  # Returns true iff the given point exists within the node's circle.
+  #
+  contains_point: (x, y, tolerance = 0) ->
+    
+    #compute the distances between the x/y coordinates
+    dx = x - @x
+    dy = y - @y
 
+    #square each of the distances, and add them to find the length of the hypotenuse ("distance from the center")-squared
+    #(note that this implicitly finds the absolute value of the distance)
+    distance = (dx * dx) + (dy * dy)
+
+    #Return true iff the gien point is within the circle's radius.
+    #(It's distance from the center squared is less than the radius squared).
+    distance <= (@radius + tolerance) * (@radius + tolerance)
+
+
+  #
+  # Draws the given node using the provided context.
+  #
   draw_using: (context) ->
 
     #set up the brush which will be used to draw the state
@@ -1468,7 +1836,7 @@ class State
     #draw the state's moore outputs
     context.fillStyle = @get_fg_color(true)
     output_y = @y + @radius + @output_padding
-    FSMDesigner.draw(context, @outputs, @x, output_y, @selected and @in_output_mode, @output_font)
+    FSMDesigner.draw_text(context, @outputs, @x, output_y, @selected and @in_output_mode, @output_font)
 
 
 
@@ -1477,9 +1845,29 @@ class State
   # Returns the color with which this state should be drawn,
   # accounting for modifiers (e.g. selected).
   #
-  get_fg_color: ->
-    if @selected() then @selected_color else @fg_color
+  get_fg_color: (is_output=false) ->
+    
+    #If we're in output mode, and this is an output, then use the "selected" FG color.
+    if @selected() and @in_output_mode and is_output
+        @selected_color
 
+    #if we're in selected, and in output mode, but this isn't and output, used the normal FG color
+    else if @selected and @in_output_mode
+        @fg_color
+
+    #if this is selected, and isn't an output, and we're not in output mode, use the selected color
+    else if @selected and not is_output
+        @selected_color 
+
+    #otherwise, use the normal FG color
+    else
+        @fg_color
+
+
+
+  #
+  # Move the node to the given x, y coordinates.
+  #
   move_to: (x, y) ->
     #TODO: pull away the mouse offset!
     @x = x 
@@ -1509,7 +1897,9 @@ class State
       y: @y - y
 
 
-
-
+#
+# Export the necessary pieces of this library.
+#
+window.FSMDesigner = FSMDesigner
 
 
