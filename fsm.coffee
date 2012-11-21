@@ -204,8 +204,6 @@ class FSMDesigner
   #
   create_state_at_location: (x, y, dont_draw=false) ->
 
-    console.log "Creating state at #{x} #{y}!"
-
     #save the system's state before the creation of the new node
     @save_undo_step()
 
@@ -230,6 +228,8 @@ class FSMDesigner
   #
   create_transition_cue: (mouse) ->
 
+      console.log "Creating transition que from #{mouse.x} to #{mouse.y}."
+
       #find the object under the mouse
       target_state = @find_state_at_position(mouse.x, mouse.y)
 
@@ -238,23 +238,30 @@ class FSMDesigner
 
         @current_transition = 
           #if the target state is currently selected, then create a self-loop from the state to itself
-          if target_state is @selected new SelfTransition(@selected, @, mouse)
+          if target_state is @selected
+              new SelfTransition(@selected, @, mouse)
 
           #otherwise, if have a target state, create a new transition going _to_ that state
-          else if target_state? new Transition(@selected, target_state, @)
+          else if target_state? 
+              new Transition(@selected, target_state, @)
 
           #otherwise, create a new temporary link, which creates a visual queue, and which "points" at the mouse pointer
-          else new TemporaryTransition(@selected.closest_point_on_circle(mouse.x, mouse.y), mouse, @)
+          else 
+              new TransitionPlaceholder(@selected.closest_point_on_border(mouse.x, mouse.y), mouse, @)
 
       #otherwise, this must be reset arc
       else
 
         @current_transition = 
           #if we have a target state, create a reset arc pointing to the target from the site of the original click
-          if target_state? new ResetTransition(target_state, @original_click, @)
+          if target_state? 
+              new ResetTransition(target_state, @original_click, @)
 
           #otherwise, create a temporary transition from the site of the original click to the site of the mouse pointer
-          else new TemporaryTransition(@original_click, mouse)
+          else 
+              new TransitionPlaceholder(@original_click, mouse)
+
+      console.log @current_transition
       
       #re-draw the FSM, including the newly-created in-progress node
       @draw()
@@ -447,7 +454,7 @@ class FSMDesigner
     transition.draw_using(context) for transition in @transitions
 
     #if have a link in the process of being drawn, render it
-    @currentTransition?.draw_using(context)
+    @current_transition?.draw_using(context)
 
     #and restore the original settings
     context.restore()
@@ -556,7 +563,6 @@ class FSMDesigner
 
     #if we don't have a currently selected object, create a new state at the current location
     if not @selected?
-      console.log mouse
       @create_state_at_location(mouse.x, mouse.y)
 
     #otherwise, if we're clicking on a State
@@ -577,7 +583,7 @@ class FSMDesigner
 
     #if the user has just pressed the shift key, switch modes accordingly
     if key is FSMDesigner.KeyCodes.SHIFT
-      @modalBehavior = FSMDesigner.ModalBehaviors.CREATE
+      @modal_behavior = FSMDesigner.ModalBehaviors.CREATE
       
     #if the designer doesn't have focus, then abort
     return unless @hasFocus()
@@ -1182,11 +1188,12 @@ class Transition
   connected_to: (state) ->
     @source is state or @destination is state
 
-
+  #
+  # Returns true iff the transition covers the given point.
+  #
   contains_point: (x, y) ->
     @get_path().contains_point(x, y)
 
-    
 
   #
   # Draws an arrow using the active color
@@ -1227,9 +1234,11 @@ class Transition
   get_deltas: ->
     #get the total displacement between the source and destination,
     #as a vector
+    dx = @destination.x - @source.x
+    dy = @destination.y - @source.y
     displacement =
-      x: @destination.x - @source.x
-      y: @destination.y - @source.y 
+      x: dx
+      y: dy
       scale: Math.sqrt(dx * dx + dy * dy)
 
     return displacement
@@ -1255,7 +1264,7 @@ class Transition
 
       #create a circle which connects the source state, the destination state, and the "anchor" point selected by the user
       anchor = @get_location()
-      circle = circle_from_three_points(@source.x, @source.y, @destination.x, @destination.y, anchor.x, anchor.y)
+      circle = CurvedPath.circle_from_three_points(@source.x, @source.y, @destination.x, @destination.y, anchor.x, anchor.y)
 
       #if the line follows the lower half of the relevant ellipse, consider it reversed, and adjust the sign of the expressions below accordingly
       reversed = @perpendiclar_part > 0
@@ -1287,15 +1296,16 @@ class Transition
   get_path_straight_line: ->
 
       #compute the middle points of the ellipse
-      midX = (@source.x + @destination.y) / 2
-      midY = (@source.y + @destination.y) / 2
+      mid =
+        x: (@source.x + @destination.y) / 2
+        y: (@source.y + @destination.y) / 2
 
       #and find the closest point on the source and destination nodes
-      start = @source.closest_point_on_circle(midX, midY)
-      end = @destination.closest_point_on_circle(midX, midY)
+      start = @source.closest_point_on_border(mid.x, mid.y)
+      end = @destination.closest_point_on_border(mid.x, mid.y)
 
       #return a new StraightPath object
-      new StraightPath(start, end)
+      new StraightPath(mid.x, mid.y)
 
   #
   # Returns an "anchor point" location for the given transition.
@@ -1329,7 +1339,7 @@ class Transition
   #
   # Moves the "anchor point" location for the given transition.
   #
-  move_to: ->
+  move_to: (x, y)->
 
     d = @get_deltas()
 
@@ -1496,7 +1506,7 @@ class ResetTransition extends Transition
 
     #And find the end point by finding the closest point
     #on the target state.
-    end = @destination.closest_point_on_circle(start.x, start.y)
+    end = @destination.closest_point_on_border(start.x, start.y)
 
     #Create a new straight path from the origin to the node.
     new StraightPath(start, end)
@@ -1504,17 +1514,23 @@ class ResetTransition extends Transition
 class TransitionPlaceholder
 
   constructor: (@start, @end) ->
+    @color = 'black'
 
   #
   # A transition placeholder is always composed of a straight path from the start to the end.
   #
   get_path: ->
-    new StraightPath(start, end)
+    new StraightPath(@start, @end)
 
   #
   # Renders the transition placeholder.
   # 
   draw_using: (context) ->
+
+    #apply the FG color
+    context.fillStyle = context.strokeStyle = @color
+
+    #and draw along the placeholder's path
     @get_path().draw_using(context)
 
 
@@ -1579,19 +1595,61 @@ class StraightPath
       angle: Math.atan2(@end.x - @start.x, @start.y - @end.y)
 
     #and render the text
-    FSMDesigner.drawText(context, text, text_location.x, text_location.y, is_selected, font, text_location.angle)
+    FSMDesigner.draw_text(context, text, text_location.x, text_location.y, is_selected, font, text_location.angle)
 
   #
   # Compute the angle for the arrowhead at the end of this path.
   #
   get_arrow_angle: ->
-    arrow_angle = Math.atan2(@end.y - @start.x, @end.x - @start.y)
+    arrow_angle = Math.atan2(@end.y - @start.y, @end.x - @start.x)
 
 
 
 class CurvedPath
 
   constructor: (@start, @end, @circle, @reversed) ->
+
+
+  #
+  # Creates a circle from three points,
+  # returning its centerpoint and radius.
+  #
+  @circle_from_three_points: (d, e, f) ->
+
+    d_hypotenuse_squared = d.x * d.x + d.y * d.y
+    e_hypotenuse_squared = e.x * e.x + e.y * e.y
+    f_hypotenuse_squared = f.x * f.x + f.y * f.y
+
+    #Compute the three parameters of the quadratic formula...
+    a = CurvedPath.determinant_3x3(d.x, d.y, 1, e.x, e.y, 1, f.x, f.y, 1)
+    b =
+      x: -1 * CurvedPath.determinant_3x3(d_hypotenuse_squared, d.y, 1, e_hypotenuse_squared, e.y, 1, f_hypotenuse_squared, f.y, 1)
+      y: CurvedPath.determinant_3x3(d_hypotenuse_squared, d.x, 1, e_hypotenuse_squared, e.x, 1, f_hypotenuse_squared, f.x, 1)
+    c= -1 * CurvedPath.determinant_3x3(d_hypotenuse_squared, d.x, d.y, e_hypotenuse_squared, e.x, e.y, f_hypotenuse_squared, f.x, f.y)
+
+    #And use it compute the circle's location.
+    circle =
+      x: -1 * b.x / (2 * a)
+      y: -1 * b.y / (2 * a)
+      radius: Math.sqrt(b.x * b.x + b.y * b.y - 4*a*c) / (2 * Math.abs(a))
+
+
+  #
+  # Quick, ugly calculation of the determinant of a 3x3 matrix.
+  # This version is computationally simpler than the general-case determinant.
+  #
+  #                                               |a, b, c|
+  # determinant_3x3 (a, b, c, d, e, f, g, h, i) = |d, e, f|
+  #                                               |g, h, i|
+  #
+  @determinant_3x3: (a, b, c, d, e, f, g, h, i) -> a*e*i + b*f*g + c*d*h - a*f*g - b*d*i - c*e*g
+
+  ###
+  function det(a, b, c, d, e, f, g, h, i) {
+    return a*e*i + b*f*g + c*d*h - a*f*h - b*d*i - c*e*g;
+  }
+  ###
+
 
   #
   # Returns true iff the given point is within the specified tolerance of the path.
@@ -1670,7 +1728,7 @@ class CurvedPath
       angle: text_angle
 
     #finally, draw the text
-    FSMDesigner.drawText(context, text, text_location.x, text_location.y, is_selected, font,  text_location.angle)
+    FSMDesigner.draw_text(context, text, text_location.x, text_location.y, is_selected, font,  text_location.angle)
 
   #
   # Compute the angle for the arrowhead at the end of this path.
@@ -1718,7 +1776,7 @@ class CircularPath
       y: @circle.y + @circle.radius * Math.sin(@anchor_angle)
 
     #... and render the text, there.
-    FSMDesigner.drawText(context, text, text_location.x, text_location.y, @anchor_angle, font, is_selected)
+    FSMDesigner.draw_text(context, text, text_location.x, text_location.y, @anchor_angle, font, is_selected)
 
 
 class State
@@ -1763,7 +1821,7 @@ class State
   #
   # 
   #
-  closest_point_on_circle: (x, y) ->
+  closest_point_on_border: (x, y) ->
 
     #Create a triangle with three legs:
     #-A hypotenuse, which connects the given point to the center of the circle, and
@@ -1785,9 +1843,6 @@ class State
     point = 
       x: @x + x_leg
       y: @y + y_leg
-
-    #And return that point.
-    return point
 
   #
   # Returns true iff the given point exists within the node's circle.

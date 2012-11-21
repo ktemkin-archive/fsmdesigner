@@ -218,7 +218,6 @@
       if (dont_draw == null) {
         dont_draw = false;
       }
-      console.log("Creating state at " + x + " " + y + "!");
       this.save_undo_step();
       this.selected = new State(x, y, this);
       this.states.push(this.selected);
@@ -230,12 +229,14 @@
 
     FSMDesigner.prototype.create_transition_cue = function(mouse) {
       var target_state;
+      console.log("Creating transition que from " + mouse.x + " to " + mouse.y + ".");
       target_state = this.find_state_at_position(mouse.x, mouse.y);
       if (this.selected != null) {
-        this.current_transition = target_state === this.selected(new SelfTransition(this.selected, this, mouse)) ? void 0 : (typeof target_state === "function" ? target_state(new Transition(this.selected, target_state, this)) : void 0) ? void 0 : new TemporaryTransition(this.selected.closest_point_on_circle(mouse.x, mouse.y), mouse, this);
+        this.current_transition = target_state === this.selected ? new SelfTransition(this.selected, this, mouse) : target_state != null ? new Transition(this.selected, target_state, this) : new TransitionPlaceholder(this.selected.closest_point_on_border(mouse.x, mouse.y), mouse, this);
       } else {
-        this.current_transition = (typeof target_state === "function" ? target_state(new ResetTransition(target_state, this.original_click, this)) : void 0) ? void 0 : new TemporaryTransition(this.original_click, mouse);
+        this.current_transition = target_state != null ? new ResetTransition(target_state, this.original_click, this) : new TransitionPlaceholder(this.original_click, mouse);
       }
+      console.log(this.current_transition);
       return this.draw();
     };
 
@@ -434,7 +435,7 @@
         transition = _ref1[_j];
         transition.draw_using(context);
       }
-      if ((_ref2 = this.currentTransition) != null) {
+      if ((_ref2 = this.current_transition) != null) {
         _ref2.draw_using(context);
       }
       return context.restore();
@@ -504,7 +505,6 @@
       this.reset_text_entry();
       this.in_output_mode = false;
       if (this.selected == null) {
-        console.log(mouse);
         this.create_state_at_location(mouse.x, mouse.y);
       } else if (this.selected instanceof State) {
         this.in_output_mode = true;
@@ -516,7 +516,7 @@
       var key;
       key = CrossBrowserUtils.key_code(e);
       if (key === FSMDesigner.KeyCodes.SHIFT) {
-        this.modalBehavior = FSMDesigner.ModalBehaviors.CREATE;
+        this.modal_behavior = FSMDesigner.ModalBehaviors.CREATE;
       }
       if (!this.hasFocus()) {
         return;
@@ -944,10 +944,12 @@
     };
 
     Transition.prototype.get_deltas = function() {
-      var displacement;
+      var displacement, dx, dy;
+      dx = this.destination.x - this.source.x;
+      dy = this.destination.y - this.source.y;
       displacement = {
-        x: this.destination.x - this.source.x,
-        y: this.destination.y - this.source.y,
+        x: dx,
+        y: dy,
         scale: Math.sqrt(dx * dx + dy * dy)
       };
       return displacement;
@@ -964,7 +966,7 @@
     Transition.prototype.get_path_curved_line = function() {
       var anchor, circle, end, end_angle, reverse_scale, reversed, start, start_angle;
       anchor = this.get_location();
-      circle = circle_from_three_points(this.source.x, this.source.y, this.destination.x, this.destination.y, anchor.x, anchor.y);
+      circle = CurvedPath.circle_from_three_points(this.source.x, this.source.y, this.destination.x, this.destination.y, anchor.x, anchor.y);
       reversed = this.perpendiclar_part > 0;
       reverse_scale = reversed ? 1 : -1;
       start_angle = Math.atan2(this.source.y - circle.y, this.source.x - circle.x) - reverse_scale * this.source.radius / circle.radius;
@@ -983,12 +985,14 @@
     };
 
     Transition.prototype.get_path_straight_line = function() {
-      var end, midX, midY, start;
-      midX = (this.source.x + this.destination.y) / 2;
-      midY = (this.source.y + this.destination.y) / 2;
-      start = this.source.closest_point_on_circle(midX, midY);
-      end = this.destination.closest_point_on_circle(midX, midY);
-      return new StraightPath(start, end);
+      var end, mid, start;
+      mid = {
+        x: (this.source.x + this.destination.y) / 2,
+        y: (this.source.y + this.destination.y) / 2
+      };
+      start = this.source.closest_point_on_border(mid.x, mid.y);
+      end = this.destination.closest_point_on_border(mid.x, mid.y);
+      return new StraightPath(mid.x, mid.y);
     };
 
     Transition.prototype.get_location = function() {
@@ -1009,7 +1013,7 @@
       return this.parent.selected === this;
     };
 
-    Transition.prototype.move_to = function() {
+    Transition.prototype.move_to = function(x, y) {
       var d, offset_x, offset_y;
       d = this.get_deltas();
       offset_x = x - this.source.x;
@@ -1123,7 +1127,7 @@
         x: this.destination.x + this.origin.x,
         y: this.destination.y + this.origin.y
       };
-      end = this.destination.closest_point_on_circle(start.x, start.y);
+      end = this.destination.closest_point_on_border(start.x, start.y);
       return new StraightPath(start, end);
     };
 
@@ -1136,13 +1140,15 @@
     function TransitionPlaceholder(start, end) {
       this.start = start;
       this.end = end;
+      this.color = 'black';
     }
 
     TransitionPlaceholder.prototype.get_path = function() {
-      return new StraightPath(start, end);
+      return new StraightPath(this.start, this.end);
     };
 
     TransitionPlaceholder.prototype.draw_using = function(context) {
+      context.fillStyle = context.strokeStyle = this.color;
       return this.get_path().draw_using(context);
     };
 
@@ -1196,12 +1202,12 @@
         y: (this.start.y + this.end.y) / 2,
         angle: Math.atan2(this.end.x - this.start.x, this.start.y - this.end.y)
       };
-      return FSMDesigner.drawText(context, text, text_location.x, text_location.y, is_selected, font, text_location.angle);
+      return FSMDesigner.draw_text(context, text, text_location.x, text_location.y, is_selected, font, text_location.angle);
     };
 
     StraightPath.prototype.get_arrow_angle = function() {
       var arrow_angle;
-      return arrow_angle = Math.atan2(this.end.y - this.start.x, this.end.x - this.start.y);
+      return arrow_angle = Math.atan2(this.end.y - this.start.y, this.end.x - this.start.x);
     };
 
     return StraightPath;
@@ -1216,6 +1222,35 @@
       this.circle = circle;
       this.reversed = reversed;
     }
+
+    CurvedPath.circle_from_three_points = function(d, e, f) {
+      var a, b, c, circle, d_hypotenuse_squared, e_hypotenuse_squared, f_hypotenuse_squared;
+      d_hypotenuse_squared = d.x * d.x + d.y * d.y;
+      e_hypotenuse_squared = e.x * e.x + e.y * e.y;
+      f_hypotenuse_squared = f.x * f.x + f.y * f.y;
+      a = CurvedPath.determinant_3x3(d.x, d.y, 1, e.x, e.y, 1, f.x, f.y, 1);
+      b = {
+        x: -1 * CurvedPath.determinant_3x3(d_hypotenuse_squared, d.y, 1, e_hypotenuse_squared, e.y, 1, f_hypotenuse_squared, f.y, 1),
+        y: CurvedPath.determinant_3x3(d_hypotenuse_squared, d.x, 1, e_hypotenuse_squared, e.x, 1, f_hypotenuse_squared, f.x, 1)
+      };
+      c = -1 * CurvedPath.determinant_3x3(d_hypotenuse_squared, d.x, d.y, e_hypotenuse_squared, e.x, e.y, f_hypotenuse_squared, f.x, f.y);
+      return circle = {
+        x: -1 * b.x / (2 * a),
+        y: -1 * b.y / (2 * a),
+        radius: Math.sqrt(b.x * b.x + b.y * b.y - 4 * a * c) / (2 * Math.abs(a))
+      };
+    };
+
+    CurvedPath.determinant_3x3 = function(a, b, c, d, e, f, g, h, i) {
+      return a * e * i + b * f * g + c * d * h - a * f * g - b * d * i - c * e * g;
+    };
+
+    /*
+      function det(a, b, c, d, e, f, g, h, i) {
+        return a*e*i + b*f*g + c*d*h - a*f*h - b*d*i - c*e*g;
+      }
+    */
+
 
     CurvedPath.prototype.contains_point = function(x, y, tolerance) {
       var angle, distance, dx, dy, end_angle, start_angle;
@@ -1268,7 +1303,7 @@
         y: this.circle.X + this.circle.radius * Math.sin(text_angle),
         angle: text_angle
       };
-      return FSMDesigner.drawText(context, text, text_location.x, text_location.y, is_selected, font, text_location.angle);
+      return FSMDesigner.draw_text(context, text, text_location.x, text_location.y, is_selected, font, text_location.angle);
     };
 
     CurvedPath.prototype.get_arrow_angle = function() {
@@ -1313,7 +1348,7 @@
         x: this.circle.x + this.circle.radius * Math.cos(this.anchor_angle),
         y: this.circle.y + this.circle.radius * Math.sin(this.anchor_angle)
       };
-      return FSMDesigner.drawText(context, text, text_location.x, text_location.y, this.anchor_angle, font, is_selected);
+      return FSMDesigner.draw_text(context, text, text_location.x, text_location.y, this.anchor_angle, font, is_selected);
     };
 
     return CircularPath;
@@ -1345,18 +1380,17 @@
       this.outputs = '';
     }
 
-    State.prototype.closest_point_on_circle = function(x, y) {
+    State.prototype.closest_point_on_border = function(x, y) {
       var dx, dy, hypotenuse, point, x_leg, y_leg;
       dx = x - this.x;
       dy = y - this.y;
       hypotenuse = Math.sqrt(dx * dx + dy * dy);
       x_leg = dx * (this.radius / hypotenuse);
       y_leg = dy * (this.radius / hypotenuse);
-      point = {
+      return point = {
         x: this.x + x_leg,
         y: this.y + y_leg
       };
-      return point;
     };
 
     State.prototype.contains_point = function(x, y, tolerance) {
