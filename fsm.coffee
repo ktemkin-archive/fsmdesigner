@@ -228,8 +228,6 @@ class FSMDesigner
   #
   create_transition_cue: (mouse) ->
 
-      console.log "Creating transition que from #{mouse.x} to #{mouse.y}."
-
       #find the object under the mouse
       target_state = @find_state_at_position(mouse.x, mouse.y)
 
@@ -247,7 +245,7 @@ class FSMDesigner
 
           #otherwise, create a new temporary link, which creates a visual queue, and which "points" at the mouse pointer
           else 
-              new TransitionPlaceholder(@selected.closest_point_on_border(mouse.x, mouse.y), mouse, @)
+              new TransitionPlaceholder(@selected.closest_point_on_border(mouse), mouse, @)
 
       #otherwise, this must be reset arc
       else
@@ -261,8 +259,6 @@ class FSMDesigner
           else 
               new TransitionPlaceholder(@original_click, mouse)
 
-      console.log @current_transition
-      
       #re-draw the FSM, including the newly-created in-progress node
       @draw()
 
@@ -306,7 +302,7 @@ class FSMDesigner
         type: 'SelfTransition'
         state: @states.indexOf(transition.state)
         text: transition.text
-        anchor_angle: state.anchor_angle
+        anchor_angle: transition.anchor_angle
 
     else if transition instanceof ResetTransition
       dehydrated =
@@ -336,7 +332,7 @@ class FSMDesigner
     @delete_transition obj
 
   #Deletes the specified state from the FSM.
-  delete_state: (state, no_redraw, no_save) ->
+  delete_state: (state, no_redraw=false, no_save=false) ->
 
     #if the state doesn't exist, abort
     return unless state in @states
@@ -358,7 +354,7 @@ class FSMDesigner
     @draw() unless no_redraw
 
   #Deletes the given transition from the FSM
-  delete_transition: (transition, no_redraw, no_save) ->
+  delete_transition: (transition, no_redraw=false, no_save=false) ->
 
     #if the transition doesn't exist, 
     return unless transition in @transitions
@@ -487,7 +483,7 @@ class FSMDesigner
   # Preference is given to states.
   #
   find_object_at_position: (x, y) ->
-    @find_transition_at_position(x, y) or @find_state_at_position(x, y)
+    @find_state_at_position(x, y) or @find_transition_at_position(x, y)
 
 
   #
@@ -645,9 +641,11 @@ class FSMDesigner
     #get the keycode of the key that triggered this event
     key = CrossBrowserUtils.key_code(e)
 
+    console.log "Hey, sorry to bother you, but the key is up, you know. The key was, uhh, #{key}, or something?"
+
     #if the event was the shift key being released, switch back to normal "pointer" mode
     if key is FSMDesigner.KeyCodes.SHIFT
-      @modalBehavior = FSMDesigner.ModalBehaviors.POINTER
+      @modal_behavior = FSMDesigner.ModalBehaviors.POINTER
 
   #
   # Handle mouse-down ("click") events.
@@ -678,11 +676,11 @@ class FSMDesigner
 
       #otherwise, if we're in pointer mode, move into "object movement" mode
       else if @modal_behavior is FSMDesigner.ModalBehaviors.POINTER
-        @start_moving_selected()
+        @start_moving_selected(mouse)
 
       #otherwise, create a new temporary reset-arc which both starts and ends at the current location
       else if @modal_behavior is FSMDesigner.ModalBehaviors.CREATE
-        @current_transition = TemporaryTransition(mouse, mouse)
+        @current_transition = TransitionPlaceholder(mouse, mouse)
 
       #re-draw the modified FSM
       @draw()
@@ -730,8 +728,8 @@ class FSMDesigner
     #If we're in the middle of creating a transition,
     if @current_transition?
 
-      #and that transition is a placeholder, convert it to a normal link
-      if not @current_transition instanceof TransitionPlaceholder
+      #and that transition is a placeholder, convert it to a normal transition
+      if not (@current_transition instanceof TransitionPlaceholder)
 
         #save an undo point
         @save_undo_step()
@@ -740,10 +738,10 @@ class FSMDesigner
         @selected = @current_link
 
         #Since we've switched to a new object, reset text entry.
-        @rndeset_text_entry()
+        @reset_text_entry()
 
         #add the given link to the FSM
-        @transitions.push(@current_link)
+        @transitions.push(@current_transition)
 
         #reset the caret
         @reset_caret()
@@ -759,7 +757,7 @@ class FSMDesigner
   handle_object_move: (mouse) ->
 
     #perform the actual move
-    @selected.move_to(mouse.x, mouse.y)
+    @selected.move_with_offset(mouse)
 
     #if this is a state, handle "snapping", if necessary
     if @selected instanceof State
@@ -774,13 +772,13 @@ class FSMDesigner
   handle_state_snap: ->
 
     #for each state in the FSM
-    for state in states
+    for state in @states
       
       #never try to snap a state to itself
       continue if state is @selected
 
       #get the distance between the selected object and the given state
-      distance = state.distance_from(@selected)
+      distance = state.distance_to(@selected)
 
       #if the selected object is close enough to the given state,
       #align it horizontally with the given state
@@ -1103,7 +1101,7 @@ class FSMDesigner
   #
   # Put the deisgner into object movement mode.
   #
-  start_moving_selected: ->
+  start_moving_selected: (mouse) ->
 
     #save an undo step before the change in movement 
     @save_undo_step()
@@ -1249,7 +1247,7 @@ class Transition
   get_path: ->
 
     #If the line is straight, get the endpoints using the simple computation
-    if @perpendiclar_part == 0
+    if @perpendicular_part == 0
       @get_path_straight_line()
 
     #otherwise, account for the line's curvature
@@ -1262,28 +1260,30 @@ class Transition
   #
   get_path_curved_line: ->
 
+      console.log "Drawing a curved line at #{@parallel_part}, #{@perpendicular_part}."
+
       #create a circle which connects the source state, the destination state, and the "anchor" point selected by the user
       anchor = @get_location()
-      circle = CurvedPath.circle_from_three_points(@source.x, @source.y, @destination.x, @destination.y, anchor.x, anchor.y)
+      circle = CurvedPath.circle_from_three_points(@source, @destination, anchor)
 
       #if the line follows the lower half of the relevant ellipse, consider it reversed, and adjust the sign of the expressions below accordingly
-      reversed = @perpendiclar_part > 0
+      reversed = @perpendicular_part > 0
       reverse_scale = if reversed then 1 else -1
      
       #compute the angle at which the line leaves its source, and enters its destination
       start_angle = Math.atan2(@source.y - circle.y, @source.x - circle.x) - reverse_scale * @source.radius / circle.radius
-      end_angle = Math.atan2(@destination.y - circle.y, @destination.x - circle.x) - reverse_scale * @destination.radius / circle.radius
+      end_angle = Math.atan2(@destination.y - circle.y, @destination.x - circle.x) + reverse_scale * @destination.radius / circle.radius
 
       #use that angle to compute the point at which the transition attaches to the source state
       start =
         x: circle.x + circle.radius * Math.cos(start_angle)
-        y: circle.y + circle.radius * Math.cos(start_angle)
+        y: circle.y + circle.radius * Math.sin(start_angle)
         angle: start_angle
 
       #and do the same for its destination
       end =
         x: circle.x + circle.radius * Math.cos(end_angle)
-        y: circle.y + circle.radius * Math.cos(end_angle)
+        y: circle.y + circle.radius * Math.sin(end_angle)
         angle: end_angle
 
       #return a new curved path object
@@ -1295,17 +1295,17 @@ class Transition
   #
   get_path_straight_line: ->
 
-      #compute the middle points of the ellipse
+      #compute the center-point of the line
       mid =
-        x: (@source.x + @destination.y) / 2
+        x: (@source.x + @destination.x) / 2
         y: (@source.y + @destination.y) / 2
 
       #and find the closest point on the source and destination nodes
-      start = @source.closest_point_on_border(mid.x, mid.y)
-      end = @destination.closest_point_on_border(mid.x, mid.y)
+      start = @source.closest_point_on_border(mid)
+      end = @destination.closest_point_on_border(mid)
 
       #return a new StraightPath object
-      new StraightPath(mid.x, mid.y)
+      new StraightPath(start, end)
 
   #
   # Returns an "anchor point" location for the given transition.
@@ -1339,19 +1339,28 @@ class Transition
   #
   # Moves the "anchor point" location for the given transition.
   #
-  move_to: (x, y)->
+  move_to: (point)->
 
     d = @get_deltas()
 
     #compute the two points in the ellipse given the new anchor point
-    offset_x = x - @source.x
-    offset_y = y - @source.y
+    offset_x = point.x - @source.x
+    offset_y = point.y - @source.y
     @parallel_part = (d.x * offset_x + d.y * offset_y) / (d.scale * d.scale)
-    @perpendicular_part = (d.x * offset_y + d.y * offset_x) / d.scale
+    @perpendicular_part = (d.x * offset_y - d.y * offset_x) / d.scale
 
     #if this is almost straight, snap to straight
     if @is_almost_straight()
       @snap_to_straight()
+
+  #
+  # Moves the "anchor point" location for the given transition, with respect
+  # to the mouse pointer.
+  #
+  move_with_offset: (point) ->
+
+    #The anchor point for a node should always be directly under the 
+    @move_to(point)
 
   #
   # Snaps the straight line to straight.
@@ -1395,70 +1404,77 @@ class SelfTransition extends Transition
     #If we have information about the point at which this node was created,
     #use it to set the arc's location.
     if created_at?
-      @move_to(created_at.x, created_at.y)
+      @move_to(created_at)
 
  
-    #
-    # Move the self-loop to the position closest to the given x, y coordinates.
-    #
-    move_to:  (x, y) ->
+  #
+  # Move the self-loop to the position closest to the given x, y coordinates.
+  #
+  move_to:  (point) ->
 
-      #find the difference between the center of the origin node
-      #and the given point
-      dx = x - @source.x
-      dy = y - @source.y
+    #find the difference between the center of the origin node
+    #and the given point
+    dx = point.x - @source.x
+    dy = point.y - @source.y
 
-      #and use that to determine the angle where the self-loop should be placed
-      angle = Math.atan2(dy, dx) + @mouse_offset_angle
+    #and use that to determine the angle where the self-loop should be placed
+    angle = Math.atan2(dy, dx) + @mouse_offset_angle
 
-      #Determine the nearest right angle to our current position.
-      right_angle = Math.round(angle / (Math.PI / 2)) * (Math.PI / 2)
+    #Determine the nearest right angle to our current position.
+    right_angle = Math.round(angle / (Math.PI / 2)) * (Math.PI / 2)
 
-      #If we're within our "snap" distance from a right angle, snap to that right angle.
-      if Math.abs(angle - right_angle) < @snap_to_right_angle_radians
-        angle = right_angle
+    #If we're within our "snap" distance from a right angle, snap to that right angle.
+    if Math.abs(angle - right_angle) < @snap_to_right_angle_radians
+      angle = right_angle
 
-      #If we're less than -Pi, normalize by adding 360, so our result fits in [-Pi, Pi]
-      if angle < -Math.PI
-        angle += 2 * Math.PI
+    #If we're less than -Pi, normalize by adding 360, so our result fits in [-Pi, Pi]
+    if angle < -Math.PI
+      angle += 2 * Math.PI
 
-      #If we're less than Pi, normalize by adding 360, so our result fits in [-Pi, Pi]
-      if angle > Math.PI
-        angle -= 2 * Math.PI
+    #If we're less than Pi, normalize by adding 360, so our result fits in [-Pi, Pi]
+    if angle > Math.PI
+      angle -= 2 * Math.PI
 
-      #Finally, apply the calculated angle. 
-      @angle = angle
+    #Finally, apply the calculated angle. 
+    @anchor_angle = angle
 
-    #
-    # Returns the path that best renders the given transition.
-    #
-    get_path: ->
+  #
+  #
+  #
+  move_with_offset: (point) ->
+    @move_to(point)
 
-      #Get the diameter scale, which is equal to twice the scale used to determine the radius.
-      diameter_scale = @scale * 2
+  #
+  # Returns the path that best renders the given transition.
+  #
+  get_path: ->
 
-      #Determine the location and radius for the loop's rendering circle.
-      circle =
-        x: @source.x + @diameter_scale * @source.radius * Math.cos(@anchor_angle)
-        y: @source.y + @diameter_scale * @source.radius * Math.sin(@anchor_angle)
-        radius: @scale * @source.radius
+    #Get the diameter scale, which is equal to twice the scale used to determine the radius.
+    diameter_scale = @scale * 2
 
-      #Compute the starting position of the loop.
-      #TODO: Figure out these magic numbers?
-      start_angle = @anchor_angle - Math.PI * @circumference_stroke
-      start =
-        x: circle.x + circle.radius * Math.cos(start_angle)
-        y: circle.y + circle.radius * Math.sin(start_angle)
-        angle: start_angle
+    #Determine the location and radius for the loop's rendering circle.
+    circle =
+      x: @source.x + diameter_scale * @source.radius * Math.cos(@anchor_angle)
+      y: @source.y + diameter_scale * @source.radius * Math.sin(@anchor_angle)
+      radius: @scale * @source.radius
 
-      end_angle = @anchor_angle + Math.PI * @circumference_stroke
-      end =
-        x: circle.x + circle.radius * Math.cos(end_angle)
-        y: circle.y + circle.radius * Math.sin(end_angle)
-        angle: end_angle
+    #Compute the starting position of the loop.
+    #TODO: Figure out these magic numbers?
+    start_angle = @anchor_angle - Math.PI * @circumference_stroke
+    start =
+      x: circle.x + circle.radius * Math.cos(start_angle)
+      y: circle.y + circle.radius * Math.sin(start_angle)
+      angle: start_angle
 
+    end_angle = @anchor_angle + Math.PI * @circumference_stroke
+    end =
+      x: circle.x + circle.radius * Math.cos(end_angle)
+      y: circle.y + circle.radius * Math.sin(end_angle)
+      angle: end_angle
 
-      new CircularPath(start, end, circle, @anchor_angle, @circumference_stroke)
+    console.log "Creating circle at #{circle.radius}."
+
+    new CircularPath(start, end, circle, @anchor_angle, @circumference_stroke)
 
 
 #
@@ -1506,7 +1522,7 @@ class ResetTransition extends Transition
 
     #And find the end point by finding the closest point
     #on the target state.
-    end = @destination.closest_point_on_border(start.x, start.y)
+    end = @destination.closest_point_on_border(start)
 
     #Create a new straight path from the origin to the node.
     new StraightPath(start, end)
@@ -1574,7 +1590,7 @@ class StraightPath
   # Renders the given transition as a straight line across
   # the provided path.
   #
-  draw_using: (context, text=null, font=null, is_selected = false) ->
+  draw_using: (context, text = null, font = null, is_selected = false) ->
 
     #draw the basic straight line
     context.beginPath()
@@ -1586,7 +1602,7 @@ class StraightPath
     Transition.draw_arrow(context, @end.x, @end.y, @get_arrow_angle()) 
 
     #If no text was provided, return.
-    return unless text?
+    return unless text? or is_selected
 
     #compute the position of the arrow's transition condition
     text_location =
@@ -1633,6 +1649,10 @@ class CurvedPath
       y: -1 * b.y / (2 * a)
       radius: Math.sqrt(b.x * b.x + b.y * b.y - 4*a*c) / (2 * Math.abs(a))
 
+    console.log circle
+    
+    circle
+
 
   #
   # Quick, ugly calculation of the determinant of a 3x3 matrix.
@@ -1642,13 +1662,7 @@ class CurvedPath
   # determinant_3x3 (a, b, c, d, e, f, g, h, i) = |d, e, f|
   #                                               |g, h, i|
   #
-  @determinant_3x3: (a, b, c, d, e, f, g, h, i) -> a*e*i + b*f*g + c*d*h - a*f*g - b*d*i - c*e*g
-
-  ###
-  function det(a, b, c, d, e, f, g, h, i) {
-    return a*e*i + b*f*g + c*d*h - a*f*h - b*d*i - c*e*g;
-  }
-  ###
+  @determinant_3x3: (a, b, c, d, e, f, g, h, i) -> a*e*i + b*f*g + c*d*h - a*f*h - b*d*i - c*e*g
 
 
   #
@@ -1700,7 +1714,7 @@ class CurvedPath
   # Renders the given transition as a curved line across
   # the provided path.
   #
-  draw_using: (context, text, font, is_selected = false) ->
+  draw_using: (context, text=null, font=null, is_selected=false) ->
 
     #draw the core arc that makes up the transition line
     context.beginPath()
@@ -1711,12 +1725,14 @@ class CurvedPath
     Transition.draw_arrow(context, @end.x, @end.y, @get_arrow_angle())
   
     #draw the transition condition text
+    return unless text? or is_selected
   
-    #if the start angle is less than the end angle, place the text on the opposite side of the line
-    if @start.angle < @end.angle
-      end_angle = @end.angle + Math.PI / 2
-    else
-      end_angle = @end.angle
+    #if the end-angle is less than the start angle, add 360 degrees 
+    end_angle =
+      if @end.angle < @start.angle
+        @end.angle + Math.PI * 2
+      else
+        @end.angle
 
     #compute the angle at which the text should be rendered, relative to the line
     text_angle = (@start.angle + end_angle) / 2 + (@reversed * Math.PI)
@@ -1734,7 +1750,8 @@ class CurvedPath
   # Compute the angle for the arrowhead at the end of this path.
   #
   get_arrow_angle: ->
-    @end.angle - if @reversed then -1 * (Math.PI / 2) else (Math.PI / 2)
+    scale = if @reversed then 1 else -1
+    @end.angle - scale * (Math.PI / 2)
 
 
 #
@@ -1755,12 +1772,12 @@ class CircularPath
     distance = Math.abs(Math.sqrt(dx * dx + dy * dy))
 
     #if the distance is within our tolerance of the radius, it's on our path
-    distance >= (radius - tolerance) and distance <= (radius + tolerance)
+    distance >= (@circle.radius - tolerance) and distance <= (@circle.radius + tolerance)
 
   #
   # Renders the given transition as a circle across the provided path.
   #
-  draw_using: (context, text, font, is_selected = false) ->
+  draw_using: (context, text=null, font=null, is_selected=false) ->
 
     #Draw the core circle that makes up the transition line.
     context.beginPath()
@@ -1769,6 +1786,9 @@ class CircularPath
 
     #Draw the head of the arrow.
     Transition.draw_arrow(context, @end.x, @end.y, @end.angle + Math.PI * @stroke_circumference / 2)
+
+    #If we don't have text to render, abort
+    return unless text? or is_selected
 
     #Find the furthest point from the state...
     text_location =
@@ -1821,13 +1841,13 @@ class State
   #
   # 
   #
-  closest_point_on_border: (x, y) ->
+  closest_point_on_border: (point) ->
 
     #Create a triangle with three legs:
     #-A hypotenuse, which connects the given point to the center of the circle, and
     #-Two legs, which represent the X and Y components of the hypotenuse. 
-    dx = x - @x
-    dy = y - @y
+    dx = point.x - @x
+    dy = point.y - @y
     hypotenuse = Math.sqrt(dx * dx + dy * dy)
 
     #Find the point where the hypotenuse touches the circle:
@@ -1861,6 +1881,18 @@ class State
     #(It's distance from the center squared is less than the radius squared).
     distance <= (@radius + tolerance) * (@radius + tolerance)
 
+  #
+  # Computes the distance from the state to the given object.
+  #
+  distance_to: (object) ->
+
+    #Compute the x and y components of the distance between two points..
+    distance =
+      x: object.x - @x
+      y: object.y - @y
+
+    #Return the distance.
+    Math.sqrt(distance.x * distance.x + distance.y * distance.y)
 
   #
   # Draws the given node using the provided context.
@@ -1903,15 +1935,15 @@ class State
   get_fg_color: (is_output=false) ->
     
     #If we're in output mode, and this is an output, then use the "selected" FG color.
-    if @selected() and @in_output_mode and is_output
+    if @is_selected() and @in_output_mode and is_output
         @selected_color
 
     #if we're in selected, and in output mode, but this isn't and output, used the normal FG color
-    else if @selected and @in_output_mode
+    else if @is_selected() and @in_output_mode
         @fg_color
 
     #if this is selected, and isn't an output, and we're not in output mode, use the selected color
-    else if @selected and not is_output
+    else if @is_selected() and not is_output
         @selected_color 
 
     #otherwise, use the normal FG color
@@ -1923,24 +1955,23 @@ class State
   #
   # Move the node to the given x, y coordinates.
   #
-  move_to: (x, y) ->
-    #TODO: pull away the mouse offset!
-    @x = x 
-    @y = y
+  move_to: (point) ->
+    @x = point.x 
+    @y = point.y
 
   #
   # Move the given state to the given X, Y coordinates,
   # accounting for the point at which the state was "grabbed".
   #
-  move_with_offset: (x, y) ->
-    @x = x + @grab_point.x
-    @y = y + @grab_point.y
+  move_with_offset: (point) ->
+    @x = point.x + @grab_point.x
+    @y = point.y + @grab_point.y
 
 
   #
   # Returns true iff the current object is selected.
   #
-  selected: ->
+  is_selected: ->
     @parent.selected is this
 
   #
