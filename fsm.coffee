@@ -101,7 +101,7 @@ class CrossBrowserUtils
 
 
 
-class FSMDesigner
+class window.FSMDesigner
   #Designer defaults:
   
   #Specifies the distance within which a node should be considered close enough
@@ -640,8 +640,6 @@ class FSMDesigner
 
     #get the keycode of the key that triggered this event
     key = CrossBrowserUtils.key_code(e)
-
-    console.log "Hey, sorry to bother you, but the key is up, you know. The key was, uhh, #{key}, or something?"
 
     #if the event was the shift key being released, switch back to normal "pointer" mode
     if key is FSMDesigner.KeyCodes.SHIFT
@@ -1223,7 +1221,52 @@ class Transition
     #get a path object that represent the path of this transtion, 
     #and request that it draw itself
     @get_path().draw_using(context, @text, @font, @is_selected())
-    
+  
+  #
+  # Returns true iff the two endpoints of this transition are overlapping.
+  #
+  endpoints_are_overlapping: ->
+    @destination.overlaps_with(@source)
+
+  #
+  # Gets a path designed to avoid a 
+  #
+  get_endpoint_avoidant_path: ->
+
+    d = @get_deltas()
+
+    angle = Math.PI - d.angle
+    max_distance = @source.radius + @destination.radius
+    perpendicular = (max_distance - d.distance) / 2 + max_distance / 2
+
+
+    console.log "Angle was #{angle * (180 / Math.PI)}."
+
+    #Center the new anchor point directly between the two states.
+    midway_point =
+      x: (@source.x + @destination.x) / 2
+      y: (@source.y + @destination.y) / 2
+
+    #Create a "perpendicular" offset, which pushes the anchor point away from the "line" between
+    #the two states; this implements our "avoidant" behavior.
+    offset =
+      x: perpendicular * Math.sin(angle)
+      y: perpendicular * Math.cos(angle)
+
+      #reversed = d.x * d.y < 0
+      #reverse_scale = if reversed then -1 else 1
+    reversed = true
+    reverse_scale = -1
+
+    #Create a new anchor point by adding the offset to our midway point.
+    anchor =
+      x: midway_point.x + reverse_scale * offset.x
+      y: midway_point.y + reverse_scale * offset.y
+
+    #And ccreating
+    @get_path_curved_line(anchor, reversed)
+
+
 
   #
   # Returns the total displacement between the source and destination states,
@@ -1232,22 +1275,18 @@ class Transition
   get_deltas: ->
     #get the total displacement between the source and destination,
     #as a vector
-    dx = @destination.x - @source.x
-    dy = @destination.y - @source.y
-    displacement =
-      x: dx
-      y: dy
-      scale: Math.sqrt(dx * dx + dy * dy)
-
-    return displacement
+    @source.offset_from(@destination)
 
   #
   # Returns the end-points for the given FSM state.
   #
   get_path: ->
 
+    if @endpoints_are_overlapping()
+      @get_endpoint_avoidant_path()
+
     #If the line is straight, get the endpoints using the simple computation
-    if @perpendicular_part == 0
+    else if @perpendicular_part is 0
       @get_path_straight_line()
 
     #otherwise, account for the line's curvature
@@ -1257,17 +1296,18 @@ class Transition
 
   #
   # Get the endpoints that the transition would have if it were curved.
+  # If an anchorpoint is provided, the curve is forced through that point.
+  # If no anchorpoint is provided, the curve will be forged automatically using
+  # the curved line's parallel and perpendicular parts.
   #
-  get_path_curved_line: ->
-
-      console.log "Drawing a curved line at #{@parallel_part}, #{@perpendicular_part}."
+  get_path_curved_line: (anchor=null, reversed=null) ->
 
       #create a circle which connects the source state, the destination state, and the "anchor" point selected by the user
-      anchor = @get_location()
+      anchor ?= @get_location()
       circle = CurvedPath.circle_from_three_points(@source, @destination, anchor)
 
       #if the line follows the lower half of the relevant ellipse, consider it reversed, and adjust the sign of the expressions below accordingly
-      reversed = @perpendicular_part > 0
+      reversed ?= @perpendicular_part > 0
       reverse_scale = if reversed then 1 else -1
      
       #compute the angle at which the line leaves its source, and enters its destination
@@ -1318,10 +1358,11 @@ class Transition
 
     #and use those to compute this line's anchor point
     location =
-      x: (@source.x + d.x * @parallel_part - d.y * @perpendicular_part / d.scale)
-      y: (@source.y + d.y * @parallel_part + d.x * @perpendicular_part / d.scale)
+      x: (@source.x + d.x * @parallel_part - d.y * @perpendicular_part / d.distance)
+      y: (@source.y + d.y * @parallel_part + d.x * @perpendicular_part / d.distance)
 
     return location
+
 
   #
   # Returns true iff the given line is "almost" straight, as determined by the
@@ -1343,11 +1384,13 @@ class Transition
 
     d = @get_deltas()
 
-    #compute the two points in the ellipse given the new anchor point
-    offset_x = point.x - @source.x
-    offset_y = point.y - @source.y
-    @parallel_part = (d.x * offset_x + d.y * offset_y) / (d.scale * d.scale)
-    @perpendicular_part = (d.x * offset_y - d.y * offset_x) / d.scale
+    #Find the distance between the     
+    offset = 
+      x: point.x - @source.x
+      y: point.y - @source.y
+
+    @parallel_part = (d.x * offset.x + d.y * offset.y) / (d.distance * d.distance)
+    @perpendicular_part = (d.x * offset.y - d.y * offset.x) / d.distance
 
     #if this is almost straight, snap to straight
     if @is_almost_straight()
@@ -1406,7 +1449,6 @@ class SelfTransition extends Transition
     if created_at?
       @move_to(created_at)
 
- 
   #
   # Move the self-loop to the position closest to the given x, y coordinates.
   #
@@ -1472,8 +1514,6 @@ class SelfTransition extends Transition
       y: circle.y + circle.radius * Math.sin(end_angle)
       angle: end_angle
 
-    console.log "Creating circle at #{circle.radius}."
-
     new CircularPath(start, end, circle, @anchor_angle, @circumference_stroke)
 
 
@@ -1502,16 +1542,27 @@ class ResetTransition extends Transition
       @anchor_at(position.x, position.y)
 
   #
+  # A reset node has only one endpoint, which cannot overlap with itself.
+  #
+  endpoints_are_overlapping: -> false
+
+  #
   # Anchors the transition at the given point.
   #
-  anchor_at: (x, y) ->
+  move_to: (point) ->
 
     #Compute the offset relative to the target node.
-    @origin.x = x - @destination.x
-    @origin.y = y - @destination.y
+    @origin.x = point.x - @destination.x
+    @origin.y = point.y - @destination.y
 
     #TODO: handle snap?
   
+  #
+  # In this case, offset is meaningless?
+  #
+  move_with_offset: (point) -> move_to(point)
+
+    
   get_path: ->
 
     #Compute the start point for the given transition by
@@ -1649,8 +1700,6 @@ class CurvedPath
       y: -1 * b.y / (2 * a)
       radius: Math.sqrt(b.x * b.x + b.y * b.y - 4*a*c) / (2 * Math.abs(a))
 
-    console.log circle
-    
     circle
 
 
@@ -1799,6 +1848,9 @@ class CircularPath
     FSMDesigner.draw_text(context, text, text_location.x, text_location.y, @anchor_angle, font, is_selected)
 
 
+#
+# Represents a FSM State.
+#
 class State
 
   constructor: (@x, @y, @parent) ->
@@ -1926,8 +1978,6 @@ class State
     FSMDesigner.draw_text(context, @outputs, @x, output_y, @selected and @in_output_mode, @output_font)
 
 
-
-
   #
   # Returns the color with which this state should be drawn,
   # accounting for modifiers (e.g. selected).
@@ -1950,7 +2000,11 @@ class State
     else
         @fg_color
 
-
+  #
+  # Returns true iff the current object is selected.
+  #
+  is_selected: ->
+    @parent.selected is this    
 
   #
   # Move the node to the given x, y coordinates.
@@ -1969,10 +2023,36 @@ class State
 
 
   #
-  # Returns true iff the current object is selected.
+  # Retrieves the offset between this state and anoher state, 
+  # as four quantities:
+  # 1) An x-component of displacement, which indicates the number that would need to be added
+  #    to _this_ state's x-coordinate in order to center it in line with another state.
+  # 2) A  y-component of displacement, which indicates the number that would need to be added
+  #    to _this_ state's y-coordinate in order to center it in line with another state.
+  # 3) The total distance between the two states, as an unsigned scalar.
+  # 4) The _angle_ that a line connecting the states would have, with respect to the positive X axis.
   #
-  is_selected: ->
-    @parent.selected is this
+  offset_from: (state) ->
+    dx = state.x - @x
+    dy = state.y - @y
+    displacement =
+      x: dx
+      y: dy
+      distance: Math.sqrt(dx * dx + dy * dy)
+      angle: Math.atan2(dy, dx)
+
+  #
+  # Returns true iff the two states overlap.
+  #
+  overlaps_with: (state) ->
+
+    #Find the total distance between the state's centerpoints.
+    distance = @offset_from(state).distance
+
+    #If the total distance is less than the sum of the two radii,
+    #the nodes must be overlapping.
+    distance <= (@radius + state.radius)
+
 
   #
   # Sets the mouse offset, which identifies 
@@ -1982,10 +2062,5 @@ class State
       x: @x - x
       y: @y - y
 
-
-#
-# Export the necessary pieces of this library.
-#
-window.FSMDesigner = FSMDesigner
 
 

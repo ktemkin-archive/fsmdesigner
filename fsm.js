@@ -37,7 +37,7 @@
 
 
 (function() {
-  var CircularPath, CrossBrowserUtils, CurvedPath, FSMDesigner, ResetTransition, SelfTransition, State, StraightPath, Transition, TransitionPlaceholder,
+  var CircularPath, CrossBrowserUtils, CurvedPath, ResetTransition, SelfTransition, State, StraightPath, Transition, TransitionPlaceholder,
     __indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; },
     __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
     __hasProp = {}.hasOwnProperty,
@@ -96,7 +96,7 @@
 
   })();
 
-  FSMDesigner = (function() {
+  window.FSMDesigner = (function() {
 
     FSMDesigner.prototype.snap_to_padding = 20;
 
@@ -569,7 +569,6 @@
     FSMDesigner.prototype.handle_keyup = function(e) {
       var key;
       key = CrossBrowserUtils.key_code(e);
-      console.log("Hey, sorry to bother you, but the key is up, you know. The key was, uhh, " + key + ", or something?");
       if (key === FSMDesigner.KeyCodes.SHIFT) {
         return this.modal_behavior = FSMDesigner.ModalBehaviors.POINTER;
       }
@@ -955,32 +954,63 @@
       return this.get_path().draw_using(context, this.text, this.font, this.is_selected());
     };
 
-    Transition.prototype.get_deltas = function() {
-      var displacement, dx, dy;
-      dx = this.destination.x - this.source.x;
-      dy = this.destination.y - this.source.y;
-      displacement = {
-        x: dx,
-        y: dy,
-        scale: Math.sqrt(dx * dx + dy * dy)
+    Transition.prototype.endpoints_are_overlapping = function() {
+      return this.destination.overlaps_with(this.source);
+    };
+
+    Transition.prototype.get_endpoint_avoidant_path = function() {
+      var anchor, angle, d, max_distance, midway_point, offset, perpendicular, reverse_scale, reversed;
+      d = this.get_deltas();
+      angle = Math.PI - d.angle;
+      max_distance = this.source.radius + this.destination.radius;
+      perpendicular = (max_distance - d.distance) / 2 + max_distance / 2;
+      console.log("Angle was " + (angle * (180 / Math.PI)) + ".");
+      midway_point = {
+        x: (this.source.x + this.destination.x) / 2,
+        y: (this.source.y + this.destination.y) / 2
       };
-      return displacement;
+      offset = {
+        x: perpendicular * Math.sin(angle),
+        y: perpendicular * Math.cos(angle)
+      };
+      reversed = d.x * d.y < 0;
+      reverse_scale = reversed ? -1 : 1;
+      anchor = {
+        x: midway_point.x + reverse_scale * offset.x,
+        y: midway_point.y + reverse_scale * offset.y
+      };
+      return this.get_path_curved_line(anchor, reversed);
+    };
+
+    Transition.prototype.get_deltas = function() {
+      return this.source.offset_from(this.destination);
     };
 
     Transition.prototype.get_path = function() {
-      if (this.perpendicular_part === 0) {
+      if (this.endpoints_are_overlapping()) {
+        return this.get_endpoint_avoidant_path();
+      } else if (this.perpendicular_part === 0) {
         return this.get_path_straight_line();
       } else {
         return this.get_path_curved_line();
       }
     };
 
-    Transition.prototype.get_path_curved_line = function() {
-      var anchor, circle, end, end_angle, reverse_scale, reversed, start, start_angle;
-      console.log("Drawing a curved line at " + this.parallel_part + ", " + this.perpendicular_part + ".");
-      anchor = this.get_location();
+    Transition.prototype.get_path_curved_line = function(anchor, reversed) {
+      var circle, end, end_angle, reverse_scale, start, start_angle;
+      if (anchor == null) {
+        anchor = null;
+      }
+      if (reversed == null) {
+        reversed = null;
+      }
+      if (anchor == null) {
+        anchor = this.get_location();
+      }
       circle = CurvedPath.circle_from_three_points(this.source, this.destination, anchor);
-      reversed = this.perpendicular_part > 0;
+      if (reversed == null) {
+        reversed = this.perpendicular_part > 0;
+      }
       reverse_scale = reversed ? 1 : -1;
       start_angle = Math.atan2(this.source.y - circle.y, this.source.x - circle.x) - reverse_scale * this.source.radius / circle.radius;
       end_angle = Math.atan2(this.destination.y - circle.y, this.destination.x - circle.x) + reverse_scale * this.destination.radius / circle.radius;
@@ -1012,8 +1042,8 @@
       var d, location;
       d = this.get_deltas();
       location = {
-        x: this.source.x + d.x * this.parallel_part - d.y * this.perpendicular_part / d.scale,
-        y: this.source.y + d.y * this.parallel_part + d.x * this.perpendicular_part / d.scale
+        x: this.source.x + d.x * this.parallel_part - d.y * this.perpendicular_part / d.distance,
+        y: this.source.y + d.y * this.parallel_part + d.x * this.perpendicular_part / d.distance
       };
       return location;
     };
@@ -1027,12 +1057,14 @@
     };
 
     Transition.prototype.move_to = function(point) {
-      var d, offset_x, offset_y;
+      var d, offset;
       d = this.get_deltas();
-      offset_x = point.x - this.source.x;
-      offset_y = point.y - this.source.y;
-      this.parallel_part = (d.x * offset_x + d.y * offset_y) / (d.scale * d.scale);
-      this.perpendicular_part = (d.x * offset_y - d.y * offset_x) / d.scale;
+      offset = {
+        x: point.x - this.source.x,
+        y: point.y - this.source.y
+      };
+      this.parallel_part = (d.x * offset.x + d.y * offset.y) / (d.distance * d.distance);
+      this.perpendicular_part = (d.x * offset.y - d.y * offset.x) / d.distance;
       if (this.is_almost_straight()) {
         return this.snap_to_straight();
       }
@@ -1112,7 +1144,6 @@
         y: circle.y + circle.radius * Math.sin(end_angle),
         angle: end_angle
       };
-      console.log("Creating circle at " + circle.radius + ".");
       return new CircularPath(start, end, circle, this.anchor_angle, this.circumference_stroke);
     };
 
@@ -1138,9 +1169,17 @@
       }
     }
 
-    ResetTransition.prototype.anchor_at = function(x, y) {
-      this.origin.x = x - this.destination.x;
-      return this.origin.y = y - this.destination.y;
+    ResetTransition.prototype.endpoints_are_overlapping = function() {
+      return false;
+    };
+
+    ResetTransition.prototype.move_to = function(point) {
+      this.origin.x = point.x - this.destination.x;
+      return this.origin.y = point.y - this.destination.y;
+    };
+
+    ResetTransition.prototype.move_with_offset = function(point) {
+      return move_to(point);
     };
 
     ResetTransition.prototype.get_path = function() {
@@ -1261,7 +1300,6 @@
         y: -1 * b.y / (2 * a),
         radius: Math.sqrt(b.x * b.x + b.y * b.y - 4 * a * c) / (2 * Math.abs(a))
       };
-      console.log(circle);
       return circle;
     };
 
@@ -1482,6 +1520,10 @@
       }
     };
 
+    State.prototype.is_selected = function() {
+      return this.parent.selected === this;
+    };
+
     State.prototype.move_to = function(point) {
       this.x = point.x;
       return this.y = point.y;
@@ -1492,8 +1534,22 @@
       return this.y = point.y + this.grab_point.y;
     };
 
-    State.prototype.is_selected = function() {
-      return this.parent.selected === this;
+    State.prototype.offset_from = function(state) {
+      var displacement, dx, dy;
+      dx = state.x - this.x;
+      dy = state.y - this.y;
+      return displacement = {
+        x: dx,
+        y: dy,
+        distance: Math.sqrt(dx * dx + dy * dy),
+        angle: Math.atan2(dy, dx)
+      };
+    };
+
+    State.prototype.overlaps_with = function(state) {
+      var distance;
+      distance = this.offset_from(state).distance;
+      return distance <= (this.radius + state.radius);
     };
 
     State.prototype.set_mouse_start = function(x, y) {
@@ -1506,7 +1562,5 @@
     return State;
 
   })();
-
-  window.FSMDesigner = FSMDesigner;
 
 }).call(this);
