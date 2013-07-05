@@ -1,0 +1,30 @@
+{
+  "author": "Your Name",
+  "name": "package-name",
+  "description": "Package description",
+  "version": "1.5.4",
+  "homepage": "",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "engines": {
+    "node": "~0.6.10 || 0.8 || 0.9"
+  },
+  "scripts": {
+    "start": "brunch watch --server",
+    "test": "brunch test"
+  },
+  "dependencies": {
+    "css-brunch": ">= 1.0 < 1.6",
+    "uglify-js-brunch": ">= 1.0 < 1.6",
+    "clean-css-brunch": ">= 1.0 < 1.6",
+    "coffee-script-brunch": "~1.7.0",
+    "uglify-js": "~2.3.6",
+    "auto-reload-brunch": "~1.6.3",
+    "jade-brunch": "~1.6.0",
+    "static-jade-brunch": "~1.4.11",
+    "source-map": "~0.1.25"
+  },
+  "devDependencies": {}
+}
