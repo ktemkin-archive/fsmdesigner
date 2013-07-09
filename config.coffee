@@ -3,7 +3,7 @@ exports.config =
   files:
     javascripts:
       joinTo:
-        'javascripts/fsm.js': /^app.*coffee$/
+        'javascripts/fsm.js': /^app.*\.coffee$/
         'javascripts/vendor.js': /^vendor/
       order:
         before: []

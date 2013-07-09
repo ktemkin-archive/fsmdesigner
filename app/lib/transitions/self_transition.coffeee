@@ -1,0 +1,99 @@
+
+#
+# Special case "self-loop" transition, which represents a condition under which the FSM remains in the same state.
+#
+class SelfTransition extends Transition
+
+  constructor: (source, parent, created_at=null) ->
+
+    #create the basic transition from this object
+    super(source, source, parent)
+
+    #Default radius for this transition, as a proportion of the owning node's radius.
+    @scale = 0.75
+
+    #Default drawn circumference for this circle, as a proportion of the circumference 
+    #of the circle this transition is curved around.
+    @circumference_stroke = 0.8
+
+    #Determine the maximum offset angle which should be considered aligned to a "right" angle.
+    @snap_to_right_angle_radians = 0.1
+
+    #Initially, assume that the self-loop is attached directly above the given state.
+    @anchor_angle = 0
+
+    #?
+    @mouse_offset_angle = 0
+
+    #If we have information about the point at which this node was created,
+    #use it to set the arc's location.
+    if created_at?
+      @move_to(created_at)
+
+  #
+  # Move the self-loop to the position closest to the given x, y coordinates.
+  #
+  move_to:  (point) ->
+
+    #find the difference between the center of the origin node
+    #and the given point
+    dx = point.x - @source.x
+    dy = point.y - @source.y
+
+    #and use that to determine the angle where the self-loop should be placed
+    angle = Math.atan2(dy, dx) + @mouse_offset_angle
+
+    #Determine the nearest right angle to our current position.
+    right_angle = Math.round(angle / (Math.PI / 2)) * (Math.PI / 2)
+
+    #If we're within our "snap" distance from a right angle, snap to that right angle.
+    if Math.abs(angle - right_angle) < @snap_to_right_angle_radians
+      angle = right_angle
+
+    #If we're less than -Pi, normalize by adding 360, so our result fits in [-Pi, Pi]
+    if angle < -Math.PI
+      angle += 2 * Math.PI
+
+    #If we're less than Pi, normalize by adding 360, so our result fits in [-Pi, Pi]
+    if angle > Math.PI
+      angle -= 2 * Math.PI
+
+    #Finally, apply the calculated angle. 
+    @anchor_angle = angle
+
+  #
+  #
+  #
+  move_with_offset: (point) ->
+    @move_to(point)
+
+  #
+  # Returns the path that best renders the given transition.
+  #
+  get_path: ->
+
+    #Get the diameter scale, which is equal to twice the scale used to determine the radius.
+    diameter_scale = @scale * 2
+
+    #Determine the location and radius for the loop's rendering circle.
+    circle =
+      x: @source.x + diameter_scale * @source.radius * Math.cos(@anchor_angle)
+      y: @source.y + diameter_scale * @source.radius * Math.sin(@anchor_angle)
+      radius: @scale * @source.radius
+
+    #Compute the starting position of the loop.
+    #TODO: Figure out these magic numbers?
+    start_angle = @anchor_angle - Math.PI * @circumference_stroke
+    start =
+      x: circle.x + circle.radius * Math.cos(start_angle)
+      y: circle.y + circle.radius * Math.sin(start_angle)
+      angle: start_angle
+
+    end_angle = @anchor_angle + Math.PI * @circumference_stroke
+    end =
+      x: circle.x + circle.radius * Math.cos(end_angle)
+      y: circle.y + circle.radius * Math.sin(end_angle)
+      angle: end_angle
+
+    new CircularPath(start, end, circle, @anchor_angle, @circumference_stroke)
+

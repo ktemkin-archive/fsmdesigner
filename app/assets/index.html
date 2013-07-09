@@ -2,12 +2,11 @@
 <html lang="en">
   <head>
     <title>FSMDesigner</title>
+    <link href="http://fonts.googleapis.com/css?family=Droid+Sans:400,700" rel="stylesheet" type="text/css">
     <link href="stylesheets/fsm.css" rel="stylesheet" type="text/css">
+    <script src="javascripts/vendor.js"></script>
     <script src="javascripts/fsm.js"></script>
-    <script>
-      require('main')
-      
-    </script>
+    <script>require('main')</script>
   </head>
   <body>
     <div id="toolbar">
@@ -22,6 +21,9 @@
       <button id="btnRedo" class="toolbutton icon-repeat"> Redo</button><span class="separator"> |</span>
       <button id="btnHelp" class="toolbutton icon-question-sign"> What do I do?</button>
       <div class="logo"><strong>FSM</strong>Designer <span class="logobeta">beta</span></div>
+    </div>
+    <div id="text_container">
+      <input id="text_field" name="text_field">
     </div>
     <canvas id="canvas">
       <div class="unsupported">

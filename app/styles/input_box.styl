@@ -1,0 +1,41 @@
+opacity(n)
+  opacity n
+  filter unquote('progid:DXImageTransform.Microsoft.Alpha(Opacity=' + round(n * 100) + ')')
+
+fade(n)
+  webkit-transition: opacity n ease-in-out;
+  -moz-transition: opacity n ease-in-out;
+  -o-transition: opacity n ease-in-out;
+  -ms-transition: opacity n ease-in-out;
+  transition: opacity n ease-in-out;
+
+
+#text_field
+
+  // Don't display the container until it's explicitly made visible.
+  opacity 0
+
+  // Slight fade-in and fade-out.
+  fade 0.1s
+
+  // Position the container at the top right.
+  position absolute
+  top 38px 
+  right: 10px
+  z-index 51
+
+  height 40px
+  width: 500px;
+
+  // Ensure that this is nice and visible.
+  height 40px
+  font-size 24px
+  padding-left 5px
+
+  // Provide the same visual cues as the selected element it's associated with.
+  color blue
+  border 2px solid blue
+  font-family "Inconsolata", monospace
+
+
+

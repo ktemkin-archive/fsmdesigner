@@ -24,7 +24,9 @@
     "auto-reload-brunch": "~1.6.3",
     "jade-brunch": "~1.6.0",
     "static-jade-brunch": "~1.4.11",
-    "source-map": "~0.1.25"
+    "source-map": "~0.1.25",
+    "stylus-brunch": "~1.6.1",
+    "javascript-brunch": "~1.6.0"
   },
   "devDependencies": {}
 }
