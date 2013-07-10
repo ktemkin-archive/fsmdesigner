@@ -1,0 +1,145 @@
+opacity(n)
+  opacity n
+  filter unquote('progid:DXImageTransform.Microsoft.Alpha(Opacity=' + round(n * 100) + ')')
+
+fade(n)
+  webkit-transition: opacity n ease-in-out;
+  -moz-transition: opacity n ease-in-out;
+  -o-transition: opacity n ease-in-out;
+  -ms-transition: opacity n ease-in-out;
+  transition: opacity n ease-in-out;
+
+#staging
+  display none
+  position relative
+  top: 40px
+  z-index: 1000
+
+  margin 0 auto
+  width 500px
+  height 400px
+  opacity(0)
+  fade(0.3)
+
+  font-family 'Droid Sans', sans-serif
+  font-size 18px
+  color #fff
+  padding 20px
+  background-color #444
+
+  -moz-border-radius 12px
+  -webkit-border-radius 12px
+  border-radius 12px
+
+  h1
+    font-weight 400
+    margin-bottom 10px
+    font-size 50px
+
+
+#fileControls
+  text-align center
+
+#fileOpen
+  margin 30px
+  width 400px
+
+#helpPanel
+  display none
+  opacity 0
+  position absolute
+  bottom 0px
+  left 0px
+  right 0px
+  min-height 300px
+  z-index 9999
+  padding 30px
+  padding-top 0px
+  color #fff
+  background -moz-linear-gradient(top, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.59) 100%)
+  background -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(0,0,0,0.78)), color-stop(100%,rgba(0,0,0,0.59)))
+  background -webkit-linear-gradient(top, rgba(0,0,0,0.78) 0%,rgba(0,0,0,0.59) 100%)
+  background -o-linear-gradient(top, rgba(0,0,0,0.78) 0%,rgba(0,0,0,0.59) 100%)
+  background -ms-linear-gradient(top, rgba(0,0,0,0.78) 0%,rgba(0,0,0,0.59) 100%)
+  background linear-gradient(to bottom, rgba(0,0,0,0.78) 0%,rgba(0,0,0,0.59) 100%)
+  -webkit-transition opacity 0.2s ease-out
+  transition-property opacity
+  transition-duration 0.2s
+  transition-timing-function ease-out
+  font-family 'Droid Sans', sans-serif
+  font-size 18px
+  h1
+    em
+      text-decoration underline
+      font-style normal
+  li
+    margin 8px
+
+
+#helpPanel h1 ,
+.unsupported h1
+  margin-top 50px
+  margin-bottom 10px
+  font-size 50px
+
+#divDismissHelp
+  margin-top 25px
+  text-align center
+
+#fileSubmit
+  margin-top 50px
+
+#btnDismissHelp
+  margin-top 20px
+  &:hover
+    background -webkit-gradient( linear, left top, left bottom, color-stop(0.05, #dfdfdf), color-stop(1, #ededed) )
+    background -moz-linear-gradient( center top, #dfdfdf 5%, #ededed 100% )
+    filter 'progid:DXImageTransform.Microsoft.gradient(startColorstr="#dfdfdf", endColorstr="#ededed")'
+    background-color #dfdfdf
+  &:active
+    position relative
+    top 1px
+
+#btnDismissHelp,
+#fileSubmit
+  margin 10px
+  min-width 300px
+  height 50px
+  background-color #eee
+  border-style 1px solid #000
+  moz-box-shadow inset 0px 1px 0px 0px #ffffff
+  -webkit-box-shadow inset 0px 1px 0px 0px #ffffff
+  box-shadow inset 0px 1px 0px 0px #ffffff
+  background -webkit-gradient( linear, left top, left bottom, color-stop(0.05, #ededed), color-stop(1, #dfdfdf) )
+  background -moz-linear-gradient( center top, #ededed 5%, #dfdfdf 100% )
+  filter 'progid:DXImageTransform.Microsoft.gradient(startColorstr="#ededed", endColorstr="#dfdfdf")'
+  background-color #ededed
+  -moz-border-radius 6px
+  -webkit-border-radius 6px
+  border-radius 6px
+  border 1px solid #dcdcdc
+  display inline-block
+  padding 6px 24px
+  text-decoration none
+  font-weight 700
+  font-family 'Droid Sans', sans-serif
+  font-size 18px
+  color #333
+
+.keyname
+  font-weight 700
+  border 1px solid #fff
+  -moz-border-radius 6px
+  border-radius 6px
+  padding 2px 4px 2px 4px
+  background-color #fff
+  color #333
+  margin 3px
+
+#cancelOpen 
+  float right
+  cursor pointer
+  font-size 25px
+
+
+

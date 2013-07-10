@@ -59,10 +59,18 @@ class exports.CanvasRenderer extends FSMRenderer
   #
   clear: ->
     #clear the entire canvas
-    @context.clearRect(0, 0, @canvas.width, @canvas.height);
+    @context.clearRect(0, 0, @canvas.width, @canvas.height)
 
     #save the renderer.context's current settings
     @context.translate(0.5, 0.5)
+
+
+  #
+  # Fills the canvas with the relevant color.
+  # 
+  fill: (style) ->
+    @context.fillStyle = style
+    @context.fillRect(0, 0, @canvas.width, @canvas.height)
 
   
   #
@@ -91,7 +99,7 @@ class exports.CanvasRenderer extends FSMRenderer
         corner_point_y = (10 + 5) * (if sin > 0 then 1 else -1)
         slide = sin * Math.pow(Math.abs(sin), 40) * corner_point_x - cos * Math.pow(Math.abs(cos), 10) * corner_point_y
         x += corner_point_x - sin * slide
-        y += corner_point_y - cos * slide
+        y += corner_point_y + cos * slide
 
       #round the text co-ordinates to the nearest pixel; this ensures that the caret always
       #falls aligned with a pixel, and thus always has the correct width of 1px

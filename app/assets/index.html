@@ -12,15 +12,33 @@
     <div id="toolbar">
       <button id="btnNew" class="toolbutton icon-bolt"> New</button><span class="separator"> |</span>
       <div id="saveButtons"><span id="btnSave">&nbsp;</span>
-        <button id="btnSaveDummy" class="toolbutton icon-save"> Save</button>
+        <button id="btnSaveHTML5" class="toolbutton icon-save"> Save</button>
       </div>
       <button id="btnOpen" class="toolbutton icon-folder-open"> Open</button><span class="separator"> |</span>
-      <button id="btnSavePNG" class="toolbutton icon-picture"> Create Image</button><span class="separator"> |</span>
-      <button id="btnVHDL" class="toolbutton icon-tasks"> Export to VHDL</button><span class="separator"> |</span>
-      <button id="btnUndo" class="toolbutton icon-undo"> Undo</button>
-      <button id="btnRedo" class="toolbutton icon-repeat"> Redo</button><span class="separator"> |</span>
+      <button id="btnSavePNG" class="toolbutton icon-picture"> Export to Image</button><span class="separator"> |</span>
+      <!--button#btnVHDL.toolbutton.icon-tasks(disabled="disabled")  Export to VHDL-->
+      <!--span.separator  |-->
+      <button id="btnUndo" disabled="disabled" class="toolbutton icon-undo"> Undo</button>
+      <button id="btnRedo" disabled="disabled" class="toolbutton icon-repeat"> Redo</button><span class="separator"> |</span>
       <button id="btnHelp" class="toolbutton icon-question-sign"> What do I do?</button>
       <div class="logo"><strong>FSM</strong>Designer <span class="logobeta">beta</span></div>
+    </div>
+    <div id="staging"><i id="cancelOpen" class="icon-remove-sign"></i>
+      <form id="openform" action="open_helper.php" method="post" enctype="multipart/form-data">
+        <h1>Select a file:</h1>
+        <p>Use the controls below to select the file you'd like to open:</p><br>
+        <div id="fileControls">
+          <div id="fileOpenControl">
+            <input id="fileOpen" type="file" name="fileOpen" accept=".fsmd"><br>
+          </div>
+          <input id="fileSubmit" type="submit" name="fileSubmit" value="Open File">
+        </div>
+      </form>
+    </div>
+    <div id="cancelOpen">
+      <float>right</float>
+      <cursor>pointer</cursor>
+      <font-size>25px</font-size>
     </div>
     <div id="text_container">
       <input id="text_field" name="text_field">
@@ -32,7 +50,7 @@
         <p>You can always install a newer, better version of your current browser- or choose a standards-compliant browser like <a href="http://www.google.com/chrome">Chrome</a><span>or </span><a href="http://www.firefox.com">Firefox</a><span>!</span></p>
       </div>
     </canvas>
-    <div id="helppanel">
+    <div id="helpPanel">
       <h1>This'll be <em>easy</em>.</h1>
       <p>Welcome to <strong>FSM</strong>Designer; a web-based tool for <em>Finite State Machine</em> entry. Capturing a Finite State Machine is easy! Just use the following controls:</p>
       <ul>
@@ -43,24 +61,11 @@
         <li><strong><span class="keyname">Shift</span> + drag</strong> from one <em>state</em> to another to add a new <em>state transition</em>.</li>
         <li><strong><span class="keyname">Shift</span> + drag</strong> from a blank space to an existing <em>state</em> to add a new <em>state transition</em>.</li>
         <li><strong><span class="keyname">Shift</span> + click</strong> any existing <em>state</em> to add a new <em>self-loop</em>.</li>
-        <p>Relax, and enjoy the FSM entry- <strong>FSM</strong>Designer has your back!</p><br>
-        <p>If you're using a modern browser, your work is constantly autosaved- so you're safe even if your browser crashes, or you accidentally navigate away.</p>
+        <p>Relax, and enjoy the FSM entry- <strong>FSM</strong>Designer has your back! <br/>  If you're using a modern browser, your work is constantly autosaved- so you're safe even if your browser crashes, or you accidentally navigate away.</p>
         <div id="divDismissHelp">
           <button id="btnDismissHelp" class="icon-edit">&nbsp;&nbsp;Let's get started!</button>
         </div>
       </ul>
-    </div>
-    <div id="staging"><i id="cancelOpen" class="icon-remove-sign"></i>
-      <form id="openform" action="iehelper.php" method="post" enctype="multipart/form-data">
-        <h1>Select a file:</h1>
-        <p>Use the controls below to select the file you'd like to open:</p><br>
-        <div id="fileControls">
-          <div id="fileOpenControl">
-            <input id="fileOpen" type="file" name="fileOpen" accept=".fsmd"><br>
-          </div>
-          <input id="fileSubmit" type="submit" name="fileSubmit" value="Open File">
-        </div>
-      </form>
     </div>
     <div id="backend">
       <form id="genhdl" action="genhdl.php" method="POST">

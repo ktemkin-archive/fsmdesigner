@@ -10,25 +10,10 @@ html(lang="en")
 
   body
     include ui/toolbar
-
-    include ui/text_field.jade
-
+    include ui/open_form
+    include ui/text_field
     include ui/canvas
     include ui/help
-
-
-
-    #staging
-      i#cancelOpen.icon-remove-sign
-      form#openform(action="iehelper.php", method="post", enctype="multipart/form-data")
-        h1 Select a file:
-        p Use the controls below to select the file you'd like to open:
-        br
-        #fileControls
-          #fileOpenControl
-            input#fileOpen(type="file", name="fileOpen", accept=".fsmd") 
-            br
-          input#fileSubmit(type="submit", name="fileSubmit", value="Open File")
         
     #backend
         form#genhdl(action="genhdl.php", method="POST")

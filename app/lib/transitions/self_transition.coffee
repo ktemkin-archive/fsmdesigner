@@ -107,19 +107,25 @@ class exports.SelfTransition extends Transition
   # Move the self-loop to the position closest to the given x, y coordinates,
   # or to the provided anchor angle.
   #
-  move_to:  (location) ->
+  move_to:  (position) ->
 
     # If we were provided with a number, treat it as an anchor angle.
     if typeof point == "number"
       @anchor_angle = location
       return
 
+    # If we weren't passed a given position, assume we're directly in-line
+    # with the relevant node.
+    position.x ?= @source.x
+    position.y ?= @source.y
+
     # Otherwise, assume we have a point.
+    source_position = @source.get_position()
 
     #find the difference between the center of the origin node
     #and the given point
-    dx = location.x - @source.x
-    dy = location.y - @source.y
+    dx = position.x - source_position.x
+    dy = position.y - source_position.y
 
     #and use that to determine the angle where the self-loop should be placed
     angle = Math.atan2(dy, dx) + @mouse_offset_angle
@@ -153,14 +159,17 @@ class exports.SelfTransition extends Transition
   #
   get_path: ->
 
+    # Get the metrics that describe the size and shape of the source state.
+    state_metrics = @source.get_metrics()
+
     #Get the diameter scale, which is equal to twice the scale used to determine the radius.
     diameter_scale = @scale * 2
 
     #Determine the location and radius for the loop's rendering circle.
     circle =
-      x: @source.x + diameter_scale * @source.radius * Math.cos(@anchor_angle)
-      y: @source.y + diameter_scale * @source.radius * Math.sin(@anchor_angle)
-      radius: @scale * @source.radius
+      x: state_metrics.position.x + diameter_scale * state_metrics.radius * Math.cos(@anchor_angle)
+      y: state_metrics.position.y + diameter_scale * state_metrics.radius * Math.sin(@anchor_angle)
+      radius: @scale * state_metrics.radius
 
     #Compute the starting position of the loop.
     #TODO: Figure out these magic numbers?

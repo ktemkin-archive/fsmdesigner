@@ -255,17 +255,18 @@ class exports.Transition
 
     d = @get_deltas()
 
+    # Get the size/position information for the source and destination states.
+    source_metrics = @source.get_metrics()
+    destination_metrics = @destination.get_metrics()
+
     angle = Math.PI - d.angle
-    max_distance = @source.radius + @destination.radius
+    max_distance = source_metrics.radius + destination_metrics.radius
     perpendicular = (max_distance - d.distance) / 2 + max_distance / 2
-
-
-    console.log "Angle was #{angle * (180 / Math.PI)}."
 
     #Center the new anchor point directly between the two states.
     midway_point =
-      x: (@source.x + @destination.x) / 2
-      y: (@source.y + @destination.y) / 2
+      x: (source_metrics.position.x + source_metrics.position.x) / 2
+      y: (source_metrics.position.y + source_metrics.position.y) / 2
 
     #Create a "perpendicular" offset, which pushes the anchor point away from the "line" between
     #the two states; this implements our "avoidant" behavior.
@@ -322,17 +323,24 @@ class exports.Transition
   #
   get_path_curved_line: (anchor=null, reversed=null) ->
 
+      #Retrieve the position of the destination state.
+      source_metrics      = @source.get_metrics()
+      destination_metrics = @destination.get_metrics()
+
       #create a circle which connects the source state, the destination state, and the "anchor" point selected by the user
-      anchor ?= @get_location()
-      circle = CurvedPath.circle_from_three_points(@source, @destination, anchor)
+      anchor ?= @get_position()
+      circle = CurvedPath.circle_from_three_points(source_metrics.position, destination_metrics.position, anchor)
 
       #if the line follows the lower half of the relevant ellipse, consider it reversed, and adjust the sign of the expressions below accordingly
       reversed ?= @perpendicular_part > 0
       reverse_scale = if reversed then 1 else -1
      
       #compute the angle at which the line leaves its source, and enters its destination
-      start_angle = Math.atan2(@source.y - circle.y, @source.x - circle.x) - reverse_scale * @source.radius / circle.radius
-      end_angle = Math.atan2(@destination.y - circle.y, @destination.x - circle.x) + reverse_scale * @destination.radius / circle.radius
+      source = source_metrics.position
+      destination = destination_metrics.position
+
+      start_angle = Math.atan2(source.y - circle.y, source.x - circle.x) - reverse_scale * source_metrics.radius / circle.radius
+      end_angle = Math.atan2(destination.y - circle.y, destination.x - circle.x) + reverse_scale * destination_metrics.radius / circle.radius
 
       #use that angle to compute the point at which the transition attaches to the source state
       start =
@@ -355,10 +363,14 @@ class exports.Transition
   #
   get_path_straight_line: ->
 
+      #Retrieve the position of the destination state.
+      source_position      = @source.get_position()
+      destination_position = @destination.get_position()
+
       #compute the center-point of the line
       mid =
-        x: (@source.x + @destination.x) / 2
-        y: (@source.y + @destination.y) / 2
+        x: (source_position.x + destination_position.x) / 2
+        y: (source_position.y + destination_position.y) / 2
 
       #and find the closest point on the source and destination nodes
       start = @source.closest_point_on_border(mid)
@@ -367,19 +379,22 @@ class exports.Transition
       #return a new StraightPath object
       new StraightPath(start, end)
 
+
   #
   # Returns an "anchor point" location for the given transition.
   # This is the location that is used for mouse-based movement of the transition.
   #
-  get_location: ->
+  get_position: ->
 
-    #get the differences between the start and end points of this line
+    # Get the differences between the start and end points of this line,
+    # and get the starting position for this transition.
     d = @get_deltas()
+    source_position = @source.get_position()
 
     #and use those to compute this line's anchor point
     location =
-      x: (@source.x + d.x * @parallel_part - d.y * @perpendicular_part / d.distance)
-      y: (@source.y + d.y * @parallel_part + d.x * @perpendicular_part / d.distance)
+      x: (source_position.x + d.x * @parallel_part - d.y * @perpendicular_part / d.distance)
+      y: (source_position.y + d.y * @parallel_part + d.x * @perpendicular_part / d.distance)
 
     return location
 
@@ -396,19 +411,25 @@ class exports.Transition
   #
   move_to: (point)->
 
+    #If x and/or y weren't specified, use the current value.
+    unless point.x? and point.y?
+      anchor = @get_position()
+      point.x ?= anchor.x
+      point.y ?= anchor.y
+
     d = @get_deltas()
+    source_position = @source.get_position()
 
     #Find the distance between the node's "anchor point"
     #(furthest ellipitcal point) and the source node
-    offset = 
-      x: point.x - @source.x
-      y: point.y - @source.y
+    offset =
+      x: point.x - source_position.x
+      y: point.y - source_position.y
 
     @parallel_part = (d.x * offset.x + d.y * offset.y) / (d.distance * d.distance)
     @perpendicular_part = (d.x * offset.y - d.y * offset.x) / d.distance
 
-    if @is_almost_straight()
-      @snap_to_straight()
+    @snap_to_straight() if @is_almost_straight()
 
   #
   # Moves the "anchor point" location for the given transition, with respect

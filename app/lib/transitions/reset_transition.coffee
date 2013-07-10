@@ -111,27 +111,34 @@ class exports.ResetTransition extends Transition
   #
   move_to: (point) ->
 
+    #Retrieve the position of the destination state.
+    destination_position = @destination.get_position()
+
     #Compute the offset relative to the target node.
-    @origin.x = point.x - @destination.x
-    @origin.y = point.y - @destination.y
+    @origin.x = point.x - destination_position.x if point.x?
+    @origin.y = point.y - destination_position.y if point.y?
 
     #TODO: handle snap?
   
   #
   # In this case, offset is meaningless?
   #
-  move_with_offset: (point) -> @move_to(point)
+  move_with_offset: (point) ->
+    @move_to(point)
 
   #
   # Returns a path object that 
   #
   get_path: ->
 
+    #Retrieve the position of the destination state.
+    destination_position = @destination.get_position()
+
     #Compute the start point for the given transition by
     #applying the origin offset.
-    start = 
-      x: @destination.x + @origin.x
-      y: @destination.y + @origin.y
+    start =
+      x: destination_position.x + @origin.x
+      y: destination_position.y + @origin.y
 
     #And find the end point by finding the closest point
     #on the target state.

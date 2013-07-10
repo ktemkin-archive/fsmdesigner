@@ -43,7 +43,6 @@
 {TransitionPlaceholder}        = require 'lib/transitions/transition_placeholder'
 {InvalidTransitionPlaceholder} = require 'lib/transitions/invalid_transition_placeholder'
 
-
 class exports.FSMDesigner
 
   #Designer defaults:
@@ -70,6 +69,9 @@ class exports.FSMDesigner
   textUndoDelay: 2000
 
   state_placeholder_text: 'State'
+
+  # The color to display when a file is beging dragged over the canvas.
+  drag_color: 'rgba(255, 255, 255, .8)'
 
   #Stores the next available "State ID", which will be passed to the given object.
   next_state_id: 0
@@ -114,11 +116,14 @@ class exports.FSMDesigner
     #map the appropriate handler for each of the events in the HTML5 drawing canvas
     canvas_handlers =
       'mousedown':   (e) => @handle_mousedown(e)
-      'mousemove':   (e) => @handle_mousemove(e)
-      'mouseup':     (e) => @handle_mouseup(e)
+      'mousemove':   @handle_mousemove
+      'mouseup':     @handle_mouseup
       'mousedown':   (e) => @handle_mousedown(e)
       'dblclick':    (e) => @handle_doubleclick(e)
-      'drop':        (e) => @handle_drop(e)
+      'drop':        @handle_drop
+      'dragenter':   @handle_dragenter
+      'dragover':    @handle_dragover
+      'dragleave':   @handle_dragleave
 
     #and bind the events to the canvas
     @canvas.addEventListener(event, handler, false) for event, handler of canvas_handlers
@@ -126,7 +131,7 @@ class exports.FSMDesigner
     #map the appropriate listener for each of the window events we're interested in
     container_handlers =
       'keypress':    (e) => @handle_keypress(e)
-      'keydown':     (e) => @handle_keydown(e)
+      'keydown':     @handle_keydown
       'keyup':       (e) => @handle_keyup(e)
       'resize':      (e) => @handle_resize(e)
    
@@ -137,7 +142,7 @@ class exports.FSMDesigner
     # Register the change event for the text editor.
     #
     text_field_handlers =
-      'keydown':     (e) => @handle_editor_keydown(e)
+      'keydown':     @handle_editor_keydown
       'keyup':       (e) => @handle_editor_keyup(e)
       'change':      (e) => @handle_editor_change(e)
       'paste':       (e) => @handle_editor_change(e)
@@ -295,9 +300,6 @@ class exports.FSMDesigner
     # Save the system's state before the creation of the new node
     @save_undo_step()
 
-    # De-select the currently selected object, if one exists.
-    @selection?.deselect()
-
     # Create a new state, and select it
     id = @get_unique_state_id()
     new_state = new State(id, x, y)
@@ -446,15 +448,16 @@ class exports.FSMDesigner
     #if have a link in the process of being drawn, render it
     @current_transition?.draw(renderer)
 
-    #and restore the original settings
-    #renderer.context.restore()
+    # If the canvas is currently a drag target, render it with a darker background.
+    renderer.fill(@drag_color) if @drag_target
     
     # Trigger the post-redraw event.
-    @events.redraw.call(@)
+    @events.redraw(@)
 
 
   #
   # Exports the currently designed FSM to a PNG image.
+  # TODO: Create PNG renderer? Export me to the canvas renderer?
   #
   export_png: ->
 
@@ -510,20 +513,63 @@ class exports.FSMDesigner
     null
 
   #
+  #  Handles the event that an element begins to be dragged over the canvas.
+  #
+  handle_dragenter: (e) =>
+    @drag_target = true
+    @draw()
+    @terminate_handling(e)
+
+    #Possibly preview the file, here?
+
+  #
+  # Handles a file being dragged over the element.
+  #
+  handle_dragover: (e) =>
+    @terminate_handling(e)
+
+  #
+  # Handles the event that an element is no longer being dragged over the canvas.
+  #
+  handle_dragleave: (e) =>
+    @drag_target = false
+    @draw()
+    @terminate_handling(e)
+
+  #
+  # Terminates all event handling for the given event,
+  # ensuring the browser does not complete its default behavior.
+  #
+  terminate_handling: (e) ->
+    e.preventDefault()
+    e.stopPropagation
+    return false
+
+  #
   # Handle HTML5 file drop events; this allows the user to drag a file into the designer,
   # loading their FSM.
   #
-  handle_drop: (e) ->
+  handle_drop: (e) =>
 
-    #prevent the browser from trying to load/display the file itself
+    console.log('Drop!')
+
+    # Prevent the browser from trying to load/display the file itself
     e.stopPropagation() 
     e.preventDefault()
 
+    # As the file has been dropped, we're no longer a drag target.
+    @drag_target = false
+
     #if we haven't recieved exactly one file, abort
-    return if e.dataTransfer.files.length != 1
+    return false if e.dataTransfer.files.length != 1
 
     #load the recieved file
     @load_from_file(e.dataTransfer.files[0])
+
+    #Always prevent the event from continuing down the event queue.
+    return false
+
+
   #
   # Handle double-clicks on the FSMDesigner canvas.
   #
@@ -549,7 +595,7 @@ class exports.FSMDesigner
   #
   # Handles when keys are pressed down.
   #
-  handle_keydown: (e) ->
+  handle_keydown: (e) =>
 
     #get the keycode of the key that triggered this handler
     key = CrossBrowserUtils.key_code(e)
@@ -652,11 +698,10 @@ class exports.FSMDesigner
       return false
 
 
-
   #
   # Handle mouse movement events.
   #
-  handle_mousemove: (e) ->
+  handle_mousemove: (e) =>
 
     #ignore mouse movements when a dialog is open
     return if @dialog_open
@@ -673,10 +718,11 @@ class exports.FSMDesigner
     if @moving_object
       @handle_object_move(mouse)
 
+
   #
   # Handle mouse-up events.
   #
-  handle_mouseup: (e) ->
+  handle_mouseup: (e) =>
 
     #ignore mouse releases when a dialog is open
     return if @dialog_open
@@ -715,7 +761,7 @@ class exports.FSMDesigner
   #
   # Handles a key-down in the current editor.
   #
-  handle_editor_keydown: (e) ->
+  handle_editor_keydown: (e) =>
     @handle_keydown(e)
     @handle_editor_change(e)
 
@@ -726,7 +772,6 @@ class exports.FSMDesigner
   handle_editor_keyup: (e) ->
     @handle_keyup(e)
     @handle_editor_change(e)
-    
 
   #
   # Convenience event which automatically requests that the parent application
@@ -822,7 +867,6 @@ class exports.FSMDesigner
     @pending_text_event = setTimeout(event, timeout)
 
 
-
   #
   # Handles movement of the currently selected object.
   #
@@ -852,18 +896,20 @@ class exports.FSMDesigner
       #never try to snap a state to itself
       continue if state is @selected
 
-      #get the distance between the selected object and the given state
+      # Get the distance between the selected object and the given state,
+      # and the locaiton of the new state.
       distances = state.distances_to(@selected)
+      target_position = state.get_position()
 
       #if the selected object is close enough to the given state,
       #align it horizontally with the given state
       if(Math.abs(distances.x) < @snap_to_padding)
-        @selected.x = state.x
+        @selected?.move_to {x: target_position.x}
 
       #if the selected object is close enough to the given state,
       #align it vertically with the given state
       if(Math.abs(distances.y) < @snap_to_padding)
-        @selected.y = state.y
+        @selected?.move_to {y: target_position.y}
 
   #
   # Determines if the given FSM has focus.
@@ -873,7 +919,7 @@ class exports.FSMDesigner
     active_element = document.activeElement or document.body
 
     #TODO: Abstract me away!
-    return false if document.getElementById('helppanel').style.visibility is 'visible'
+    return false if document.getElementById('helpPanel').style.display is 'none'
     return active_element is document.body or active_element is @text_field
   
 
@@ -908,7 +954,7 @@ class exports.FSMDesigner
   #
   # Loads a file from an HTML5 file object
   #
-  load_from_file: (file) ->
+  load_from_file: (file) =>
 
     #save an undo-step right 
     @save_undo_step()
@@ -917,8 +963,21 @@ class exports.FSMDesigner
     #1) read the file's contents, and 
     #2) pass the result to @unserialize
     reader = new FileReader()
-    reader.onload = (file) -> @unserialize(file.target.result)
+    reader.onload = (file) => @unserialize(file.target.result)
     reader.readAsText(file)
+
+
+  #
+  # Returns true iff the user can currently undo a given action.
+  #
+  can_undo: =>
+    @undo_stack.length > 0
+
+  #
+  # Returns true iff the user can currently redo a given action.
+  #
+  can_redo: =>
+    @redo_stack.length > 0
 
 
   #
@@ -946,22 +1005,6 @@ class exports.FSMDesigner
 
     # If we can't find one, return null.
     null
-
-
-  #
-  # Saves a FSM file using a Data URI.
-  # This method is not preferred, but will be used if Flash cannot be found.
-  #
-  save_file_data_uri: ->
-    
-    #get a serialization of the FSM's state, for saving
-    content = @serialize()
-    
-    #convert it to a data URI
-    uri_content = 'data:application/x-fsm,' + encodeURIComponent(content)
-    
-    #and ask the user's browser to download it
-    document.location.href = uri_content
 
 
   #

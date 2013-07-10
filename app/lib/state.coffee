@@ -89,7 +89,7 @@ class exports.State
   # Factory method which re-creates a state from the provided generic JSON object.
   #
   @from_json: (o) ->
-    new State(o.id, o.x, o.y, o.name, o.outputs)
+    new State(o.id, o.position.x, o.position.y, o.name, o.outputs)
 
   #
   # Converts the current state to a generic object prime for serialization.
@@ -98,7 +98,7 @@ class exports.State
   toJSON: ->
 
     # Create a list of properties which should be preserved during serialization.
-    preserved = ['id', 'x', 'y', 'name', 'outputs', 'radius']
+    preserved = ['id', 'position', 'name', 'outputs', 'radius']
 
     # ... and create a new object that contains all of those properties.
     object = {}
@@ -140,6 +140,7 @@ class exports.State
   get_value_to_edit: ->
     if @in_output_mode then @outputs else @name
 
+
   #
   # Handles the event in which the owning designer's text editor
   # has changed, while this state is in focus.
@@ -151,6 +152,24 @@ class exports.State
       @name = value
 
   #
+  # Returns the current position of the given state.
+  #
+  get_position: ->
+    return @position
+
+
+  #
+  # Returns all known shape, size, and orientation information about the state.
+  #
+  # returns: an object containing a position point, and a radius.
+  #
+  get_metrics: ->
+    @metrics =
+      position: @position
+      radius: @radius
+
+
+  #
   # Returns the point on the state's border which is closest to the given point.
   #
   closest_point_on_border: (point) ->
@@ -158,8 +177,8 @@ class exports.State
     #Create a triangle with three legs:
     #-A hypotenuse, which connects the given point to the center of the circle, and
     #-Two legs, which represent the X and Y components of the hypotenuse. 
-    dx = point.x - @x
-    dy = point.y - @y
+    dx = point.x - @position.x
+    dy = point.y - @position.y
     hypotenuse = Math.sqrt(dx * dx + dy * dy)
 
     #Find the point where the hypotenuse touches the circle:
@@ -173,8 +192,8 @@ class exports.State
     #Add the length of the X and Y legs to the centerpoint of the circle, 
     #finding the x, y coordinates of the cloest point.
     point =
-      x: @x + x_leg
-      y: @y + y_leg
+      x: @position.x + x_leg
+      y: @position.y + y_leg
 
   #
   # Returns true iff the given point exists within the node's circle.
@@ -182,8 +201,8 @@ class exports.State
   contains_point: (x, y, tolerance = 0) ->
     
     #compute the distances between the x/y coordinates
-    dx = x - @x
-    dy = y - @y
+    dx = x - @position.x
+    dy = y - @position.y
 
     #square each of the distances, and add them to find the length of the hypotenuse ("distance from the center")-squared
     #(note that this implicitly finds the absolute value of the distance)
@@ -204,9 +223,11 @@ class exports.State
   #
   distances_to: (object) ->
 
+    object_position = object.get_position()
+
     # Compute the x, y, and total distances.
-    dx = object.x - @x
-    dy = object.y - @y
+    dx = object_position.x - @position.x
+    dy = object_position.y - @position.y
     total = Math.sqrt(dx * dx + dy * dy)
 
     # Create an object containing each of the various distances (and create the 
@@ -229,20 +250,19 @@ class exports.State
 
     #create the state's circle
     renderer.context.beginPath()
-    renderer.context.arc(@x, @y, @radius, 0, Math.PI * 2, false)
+    renderer.context.arc(@position.x, @position.y, @radius, 0, Math.PI * 2, false)
     renderer.context.fill()
     renderer.context.stroke()
 
     #add the state's name
     renderer.context.fillStyle = @get_fg_color()
-    #renderer.draw_text(@name, @x, @y, @selected and not @in_output_mode, @font)
     renderer.render_text(@name, @position, @selected and not @in_output_mode, @font)
 
     #draw the state's moore outputs
     renderer.context.fillStyle = @get_fg_color(true)
     renderer.context.strokeStyle = renderer.context.fillStyle;
-    output_y = @y + @radius + @output_padding
-    renderer.draw_text(@outputs, @x, output_y, @selected and @in_output_mode, @output_font)
+    output_y = @position.y + @radius + @output_padding
+    renderer.draw_text(@outputs, @position.x, output_y, @selected and @in_output_mode, @output_font)
 
 
   #
@@ -273,9 +293,10 @@ class exports.State
   move_to: (point) ->
 
     # Move the main state...
-    @position = point
-    @x = point.x
-    @y = point.y
+    @position =
+      x: point.x ? @position.x
+      y: point.y ? @position.y
+
 
   #
   # Move the given state to the given X, Y coordinates,
@@ -299,13 +320,23 @@ class exports.State
   # 4) The _angle_ that a line connecting the states would have, with respect to the positive X axis.
   #
   offset_from: (state) ->
-    dx = state.x - @x
-    dy = state.y - @y
+
+    # Get the position of the target state.
+    state_position = state.get_position()
+    
+    # Compute the raw displacement of the state... 
+    dx = state_position.x - @position.x
+    dy = state_position.y - @position.y
+
+    #And the distances (and displacements) from the given state.
     displacement =
       x: dx
       y: dy
       distance: Math.sqrt(dx * dx + dy * dy)
       angle: Math.atan2(dy, dx)
+
+    # Return the given displacmenet.
+    displacement
 
   #
   # Returns true iff the two states overlap.
@@ -315,10 +346,9 @@ class exports.State
     #Find the total distance between the state's centerpoints.
     distance = @offset_from(state).distance
 
-
     #If the total distance is less than the sum of the two radii,
     #the nodes must be overlapping.
-    distance <= (@radius + state.radius)
+    distance <= (@radius + state.get_metrics().radius)
 
 
   #
@@ -326,5 +356,5 @@ class exports.State
   #
   set_mouse_start: (x, y) ->
     @grab_point =
-      x: @x - x
-      y: @y - y
+      x: @position.x - x
+      y: @position.y - y

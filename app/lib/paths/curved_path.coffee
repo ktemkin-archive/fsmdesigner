@@ -94,7 +94,7 @@ class exports.CurvedPath
     else
 
       #determine the approximate angle from the center of the circle
-      angle = Math.atan(dy, dx)
+      angle = Math.atan2(dy, dx)
      
       #if the line is reversed, switch the start and end angles
       if @reversed
