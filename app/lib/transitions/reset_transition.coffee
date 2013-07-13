@@ -42,6 +42,10 @@
 class exports.ResetTransition extends Transition
   Transition.register_subclass(@::constructor)
 
+  # Use a different foreground color for reset transitions, so the difference is visible.
+  fg_color: '#30556B'
+  selected_color: 'blue'
+ 
   #
   # Creates a new reset-transition.
   #

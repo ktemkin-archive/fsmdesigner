@@ -75,7 +75,14 @@ class exports.CurvedPath
   #
   @determinant_3x3: (a, b, c, d, e, f, g, h, i) -> a*e*i + b*f*g + c*d*h - a*f*h - b*d*i - c*e*g
 
+  #
+  # Returns the starting point of the given arc.
+  #
+  get_position: ->
+    @start
 
+  #TODO: get_metrics
+  
   #
   # Returns true iff the given point is within the specified tolerance of the path.
   #

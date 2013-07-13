@@ -45,11 +45,49 @@ class exports.StraightPath
   # Creates a new straight path, used to indicate the visible "path" of a transition.
   #
   constructor: (@start, @end) ->
+  
+  #
+  # Return the position at which the given path starts.
+  #
+  get_position: ->
+    @start
+
+  #TODO: get_metrics
 
   #
   # Returns true iff the given point is within the specified tolerance of the path.
   #
-  contains_point: (x, y, tolerance = 20) -> 
+  contains_point: (x, y, tolerance = 20) ->
+
+    #determine the center-point, between the two circles-
+    #our line must intersect this point
+    dx = @end.x - @start.x
+    dy = @end.y - @start.y
+
+    #figure out the point's offset from the starting point
+    offset_x = x - @start.x
+    offset_y = y - @start.y
+
+    #and figure out the length of the line
+    length = Math.sqrt(dx*dx + dy*dy)
+
+    #compute the offset difference from the line
+    percent = (dx * offset_x + dy * offset_y) / (length * length)
+    distance = (dx * offset_y - dy * offset_x) / length
+
+    #and determine if the actual click was more than a tolerance away from the real line
+    return percent > 0 and percent < 1 and Math.abs(distance) < tolerance
+
+
+  #
+  # Renders the given transition as a straight line across
+  # the provided path.
+  #
+  draw: (renderer, text = null, font = null, is_selected = false) ->
+  #
+  # Returns true iff the given point is within the specified tolerance of the path.
+  #
+  contains_point: (x, y, tolerance = 20) ->
 
     #determine the center-point, between the two circles-
     #our line must intersect this point

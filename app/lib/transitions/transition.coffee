@@ -50,15 +50,17 @@ class exports.Transition
   # to straight, as a maximum pixel deviation.
   snap_to_straight_padding: 20 
 
+  # Default foreground color for the transition.
+  fg_color: 'black'
+  selected_color: 'blue'
+
   #
   # Initializes a new Transition object.
   #
   constructor: (@source, @destination, properties={}) ->
 
     @font = '16px "Inconsolata", monospace'
-    @fg_color = 'black'
     @bg_color = 'white'
-    @selected_color = 'blue'
   
     #Value added to the text angle when the transition is a straight line.
     @line_angle_adjustment = 0
@@ -178,8 +180,9 @@ class exports.Transition
   #
   # Marks this transition as selected.
   #
-  select: -> 
+  select: ->
     @selected = true
+
 
   #
   # Marks this transition as no longer being selected.
@@ -193,7 +196,7 @@ class exports.Transition
   #
   # TODO: Replace me with a more renderer-centered model!
   #
-  apply_transition_color: (renderer) ->
+  apply_transition_color: (renderer) =>
 
     #if the arc is selected, apply the selected color
     if @selected
@@ -314,6 +317,12 @@ class exports.Transition
     else
       @get_path_curved_line()
 
+
+  #
+  # Returns the (starting) position of the given transition.
+  #
+  get_starting_position: ->
+    @get_path().get_position()
 
   #
   # Get the endpoints that the transition would have if it were curved.

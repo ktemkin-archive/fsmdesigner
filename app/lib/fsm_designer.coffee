@@ -50,6 +50,9 @@ class exports.FSMDesigner
   #Specifies the distance within which a node should be considered close enough
   #to be "snapped" into line with the other node.
   snap_to_padding:  20
+
+  # Specficies the tolerance (in pixels) to be allowed then trying to grab a state.
+  state_grab_tolerance: 5
   
   #Specifies the maximum distance from the outside of a node which will be considered
   #a "on" the node. Larger values may be more appropriate for touch screens.
@@ -63,6 +66,8 @@ class exports.FSMDesigner
   selected: null
   current_transition: null
   moving_object: false
+
+  invalid_transition_color: 'red'
   
   textEntryTimeout: null
   textEnteredRecently: false
@@ -350,7 +355,7 @@ class exports.FSMDesigner
           new ResetTransition(target_state, @original_click)
 
         #otherwise, create a temporary transition from the site of the original click to the site of the mouse pointer
-        else 
+        else
           new TransitionPlaceholder(@original_click, mouse)
 
     #re-draw the FSM, including the newly-created in-progress node
@@ -434,6 +439,9 @@ class exports.FSMDesigner
   draw: (renderer=@default_renderer) ->
     @events.resize?(@canvas)
 
+    #If the user has placed a reset condition, ensure it's valid.
+    @validate_reset_transition()
+
     # Clear the existing UI.
     renderer.clear()
 
@@ -454,6 +462,36 @@ class exports.FSMDesigner
     # Trigger the post-redraw event.
     @events.redraw(@)
 
+
+  #
+  # Highlights any likely-invalid reset transition, 
+  # like a reset transition that originates on top of another state.
+  #
+  validate_reset_transition: ->
+
+    # Get the current FSM's reset transition.
+    reset_transition = @get_reset_transition()
+
+    # If we don't have a reset transition, abort.
+    return unless reset_transition?
+
+    # Find the starting position of our reset transition.
+    # TODO: replace find_object_at_position/find_state_at_position's
+    # arguments with points.
+    {x, y} = reset_transition.get_starting_position()
+
+    # If we're overlapping a state, this node is likely invalid.
+    # Highlight it.
+    if @find_state_at_position(x, y)?
+      #TODO: Conevrt to setter.
+      reset_transition.fg_color = @invalid_transition_color
+
+    # Otherwise, reset the color to its default. 
+    # Here, deleting the relevant transition delegates back to
+    # the prototypal object.
+    else
+      #TODO: Convert to setter.
+      delete reset_transition.fg_color
 
   #
   # Exports the currently designed FSM to a PNG image.
@@ -483,17 +521,17 @@ class exports.FSMDesigner
   # Preference is given to states.
   #
   find_object_at_position: (x, y) ->
-    @find_state_at_position(x, y) or @find_transition_at_position(x, y)
+    @find_state_at_position(x, y, @state_tolerance) or @find_transition_at_position(x, y)
 
 
   #
   # Finds the state at the given position, or returns null if none exists.
   # 
-  find_state_at_position: (x, y) ->
+  find_state_at_position: (x, y, tolerance=0) ->
     
     #next, check for a node at the given position
     for state in @states
-      if state.contains_point(x, y)
+      if state.contains_point(x, y, tolerance)
         return state
 
     #if we couldn't find one, return null
@@ -502,11 +540,11 @@ class exports.FSMDesigner
   #
   # Finds the transition at the given position, or returns null if none exists.
   #
-  find_transition_at_position: (x, y) ->
+  find_transition_at_position: (x, y, tolerance=0) ->
 
     #first, look for a transition at the given position
     for transition in @transitions
-      if transition.contains_point(x,y)
+      if transition.contains_point(x, y, tolerance)
         return transition
 
     #if we couldn't find one, return null
@@ -1111,7 +1149,14 @@ class exports.FSMDesigner
   # Returns true iff the current FSM has a reset transition.
   #
   has_reset_transition: ->
-    (t for t in @transitions when t instanceof ResetTransition).length != 0
+    @get_reset_transtion()?
+
+  #
+  # Returns the reset transition for this FSM, if it has one; or undefined, otherwise.
+  #
+  get_reset_transition: ->
+    (t for t in @transitions when t instanceof ResetTransition).pop()
+
 
   #
   # Return true if two "undo" states represent the same value.

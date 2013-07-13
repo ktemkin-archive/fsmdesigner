@@ -56,6 +56,12 @@ class exports.CircularPath
     distance >= (@circle.radius - tolerance) and distance <= (@circle.radius + tolerance)
 
   #
+  # Returns the position at which the given circle is locate.
+  #
+  get_position: ->
+    return @start
+
+  #
   # Renders the given transition as a circle across the provided path.
   #
   draw: (renderer, text=null, font=null, is_selected=false, show_caret=false) ->
