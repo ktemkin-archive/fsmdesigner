@@ -67,7 +67,8 @@ class exports.FSMDesigner
   current_transition: null
   moving_object: false
 
-  invalid_transition_color: 'red'
+  # Color that will be applied to malformed or probably-invalid transitions.
+  invalid_transition_color: '#AD0009'
   
   textEntryTimeout: null
   textEnteredRecently: false
@@ -480,17 +481,17 @@ class exports.FSMDesigner
     # arguments with points.
     {x, y} = reset_transition.get_starting_position()
 
-    # If we're overlapping a state, this node is likely invalid.
+    #TODO: Convert the code below to use setter functions.
+
+    # If we're overlapping a state, the 
     # Highlight it.
-    if @find_state_at_position(x, y)?
-      #TODO: Conevrt to setter.
+    if @find_state_at_position(x, y, 10)?
       reset_transition.fg_color = @invalid_transition_color
 
     # Otherwise, reset the color to its default. 
     # Here, deleting the relevant transition delegates back to
     # the prototypal object.
     else
-      #TODO: Convert to setter.
       delete reset_transition.fg_color
 
   #
@@ -1149,7 +1150,7 @@ class exports.FSMDesigner
   # Returns true iff the current FSM has a reset transition.
   #
   has_reset_transition: ->
-    @get_reset_transtion()?
+    @get_reset_transition()?
 
   #
   # Returns the reset transition for this FSM, if it has one; or undefined, otherwise.
