@@ -958,7 +958,7 @@ class exports.FSMDesigner
     active_element = document.activeElement or document.body
 
     #TODO: Abstract me away!
-    return false if document.getElementById('helpPanel').style.display is 'none'
+    return false if document.getElementById('helpPanel').style.display is 'block'
     return active_element is document.body or active_element is @text_field
   
 
