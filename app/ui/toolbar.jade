@@ -13,14 +13,19 @@
   button#btnSavePNG.toolbutton.icon-picture  Export to Image
   span.separator  |
 
-  //button#btnVHDL.toolbutton.icon-tasks(disabled="disabled")  Export to VHDL
-  //span.separator  |
+  button#btnVHDL.toolbutton.icon-tasks(disabled="disabled")  Export to VHDL
+  span.separator  |
 
   button#btnUndo.toolbutton.icon-undo(disabled='disabled')  Undo
   button#btnRedo.toolbutton.icon-repeat(disabled='disabled')  Redo
   span.separator  |
 
   button#btnHelp.toolbutton.icon-question-sign  What do I do?
+
+  span.separator  |
+  i.icon-tag.toolicon
+  label.toolfield(for="designName") Design Name:
+  input#designName.toolfield(value="fsm")
 
   .logo
     <strong>FSM</strong>Designer 

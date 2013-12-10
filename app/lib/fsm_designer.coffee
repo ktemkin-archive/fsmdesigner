@@ -34,6 +34,7 @@
 
 {CrossBrowserUtils}            = require 'lib/cross_browser_utils'
 {CanvasRenderer}               = require 'lib/renderers/canvas_renderer'
+{LogicEquation}                = require 'lib/logic_equation'
 
 {State}                        = require 'lib/state'
 
@@ -43,6 +44,10 @@
 {TransitionPlaceholder}        = require 'lib/transitions/transition_placeholder'
 {InvalidTransitionPlaceholder} = require 'lib/transitions/invalid_transition_placeholder'
 
+
+#
+# Core FSMDesigner class.
+#
 class exports.FSMDesigner
 
   #Designer defaults:
@@ -518,6 +523,13 @@ class exports.FSMDesigner
 
 
   #
+  # Converts the given Finite State Machine to VHDL.
+  #
+  to_VHDL: ->
+
+
+
+  #
   # Finds the object at the given x,y position on the canvas.
   # Preference is given to states.
   #
@@ -589,8 +601,6 @@ class exports.FSMDesigner
   # loading their FSM.
   #
   handle_drop: (e) =>
-
-    console.log('Drop!')
 
     # Prevent the browser from trying to load/display the file itself
     e.stopPropagation() 
@@ -1160,7 +1170,17 @@ class exports.FSMDesigner
 
 
   #
+  # Returns a list of all known outputs for the FSM being designed.
+  #
+  outputs: ->
+    [].concat((state.output_names() for state in @states)...)
+
+
+  #
   # Return true if two "undo" states represent the same value.
   #
   @states_equivalent: (a, b) ->
     JSON.stringify(a) == JSON.stringify(b)
+
+
+

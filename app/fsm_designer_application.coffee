@@ -34,6 +34,7 @@
 ###
 
 {FSMDesigner} = require 'lib/fsm_designer'
+{LogicEquation} = require 'lib/logic_equation'
 
 class exports.FSMDesignerApplication
 

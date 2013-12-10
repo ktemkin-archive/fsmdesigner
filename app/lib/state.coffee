@@ -34,6 +34,8 @@
 ###
 
 {CanvasRenderer} = require 'lib/renderers/canvas_renderer'
+{LogicEquation}  = require 'lib/logic_equation'
+
 
 #
 # Represents a FSM State.
@@ -358,3 +360,23 @@ class exports.State
     @grab_point =
       x: @position.x - x
       y: @position.y - y
+
+
+  #
+  # Returns a parsed list of all output expressions.
+  #
+  output_expressions: ->
+    new LogicEquation(equation) for equation in @outputs.split(' ')
+
+  #
+  # Returns a list of all output names provided by the current state.
+  #
+  output_names: ->
+    expression.output for expression in @output_expressions()
+
+
+      
+
+
+
+

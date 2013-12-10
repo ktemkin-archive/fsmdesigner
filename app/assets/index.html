@@ -16,11 +16,12 @@
       </div>
       <button id="btnOpen" class="toolbutton icon-folder-open"> Open</button><span class="separator"> |</span>
       <button id="btnSavePNG" class="toolbutton icon-picture"> Export to Image</button><span class="separator"> |</span>
-      <!--button#btnVHDL.toolbutton.icon-tasks(disabled="disabled")  Export to VHDL-->
-      <!--span.separator  |-->
+      <button id="btnVHDL" disabled="disabled" class="toolbutton icon-tasks"> Export to VHDL</button><span class="separator"> |</span>
       <button id="btnUndo" disabled="disabled" class="toolbutton icon-undo"> Undo</button>
       <button id="btnRedo" disabled="disabled" class="toolbutton icon-repeat"> Redo</button><span class="separator"> |</span>
-      <button id="btnHelp" class="toolbutton icon-question-sign"> What do I do?</button>
+      <button id="btnHelp" class="toolbutton icon-question-sign"> What do I do?</button><span class="separator"> |</span><i class="icon-tag toolicon"></i>
+      <label for="designName" class="toolfield">Design Name:</label>
+      <input id="designName" value="fsm" class="toolfield">
       <div class="logo"><strong>FSM</strong>Designer <span class="logobeta">beta</span></div>
     </div>
     <div id="staging"><i id="cancelOpen" class="icon-remove-sign"></i>
