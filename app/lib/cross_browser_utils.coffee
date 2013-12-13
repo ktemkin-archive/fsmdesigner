@@ -44,7 +44,7 @@ class exports.CrossBrowserUtils
   @element_position: (e) ->
 
     #Find the true event object for the given event.
-    e = CrossBrowserUtils.true_event()
+    e = CrossBrowserUtils.true_event(e)
 
     #find the element which triggered the event
     element = e.target or e.srcElement
@@ -71,7 +71,7 @@ class exports.CrossBrowserUtils
   @mouse_position: (e) ->
 
     #Find the true event object for the given event.
-    e = CrossBrowserUtils.true_event()
+    e = CrossBrowserUtils.true_event(e)
 
     #Find the mouse position via whichever method is supported:
     #- Directly, if provided, or
@@ -91,11 +91,19 @@ class exports.CrossBrowserUtils
       x: mouse.x - element.x
       y: mouse.y - element.y
 
+  #
+  # Returns the key code for the provided keyboard event.
+  #
   @key_code: (e) ->
     
     #Find the true event object for the given event.
-    e = CrossBrowserUtils.true_event()
+    e = CrossBrowserUtils.true_event(e)
 
     #Return whichever of the two fields was populated.
     e.which or e.keyCode
+
+  @true_event: (e) ->
+    e || window.event
+
+    
 

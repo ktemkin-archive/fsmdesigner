@@ -33,9 +33,11 @@
  OTHER DEALINGS IN THE SOFTWARE.
 ###
 
-{State}        = require 'lib/state'
-{CurvedPath}   = require 'lib/paths/curved_path'
-{StraightPath} = require 'lib/paths/straight_path'
+{State}          = require 'lib/state'
+{CurvedPath}     = require 'lib/paths/curved_path'
+{StraightPath}   = require 'lib/paths/straight_path'
+
+{LogicEquation}  = require 'lib/logic_equation'
 
 #
 # Represents a generic FSM state transition.
@@ -48,7 +50,7 @@ class exports.Transition
 
   # How close an arrow should be to straight before the arrow "snaps"
   # to straight, as a maximum pixel deviation.
-  snap_to_straight_padding: 20 
+  snap_to_straight_padding: 20
 
   # Default foreground color for the transition.
   fg_color: 'black'
@@ -460,4 +462,48 @@ class exports.Transition
 
     #and snap the line to straight
     @perpendicular_part = 0
+
+
+  #
+  # Returns true iff this transition is leaving the given state
+  #
+  leaves_from: (state) ->
+    @source is state
+
+
+  #
+  # Returns a LogicEquation object which summarizes the object's transition condition.
+  #
+  expression: ->
+    LogicEquation.from_expression(@condition)
+
+
+  #
+  # Returns a list of all output names provided by the current state.
+  #
+  input_names: ->
+    @expression().inputs
+
+ 
+  #
+  # Returns true iff this is an unconditional transition.
+  #
+  is_unconditional_transition: ->
+    @condition.trim() == '' or @condition.trim() == '1' or @condition.trim() == '-'
+
+
+  #
+  # Returns a short summary of this transition's condition.
+  #
+  get_editor_summary: ->
+   
+    #Specify a message if this transition should be unconditional.
+    return "This transition will <b>always</b> be taken at the rising edge of the clock." if @is_unconditional_transition()
+
+    #If we have a condition, parse it.
+    try
+      "Inputs are: #{@input_names().join(", ")}<br/>Interpreting as: #{LogicEquation.from_expression(@condition).to_VHDL_expression()}"
+    catch syntax_error
+      syntax_error
+
 

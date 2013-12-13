@@ -34,14 +34,13 @@
 ###
 
 {FSMDesigner} = require 'lib/fsm_designer'
-{LogicEquation} = require 'lib/logic_equation'
 
 class exports.FSMDesignerApplication
 
   #
   # Perform the core JS start-up, once the window is ready.
   #
-  constructor: (@canvas, @text_field, @toolbar, @file_form=null) ->
+  constructor: (@canvas, @text_field, @input_stats, @toolbar, @file_form=null) ->
   
     # Create a basic data-store for the persistant features, like autosaving.
     @datastore = new Persist.Store('FSMDesigner', {swf_path: 'flash/persist.swf'})
@@ -132,9 +131,9 @@ class exports.FSMDesignerApplication
         
     # If we were able to get a last design, re-create the FSM designer from the last serialized input.
     if last_design?
-      @designer = FSMDesigner.unserialize(last_design, text_field, canvas, window, @designer_event_handlers)
+      @designer = FSMDesigner.unserialize(last_design, @text_field, @canvas, @input_stats, window, @designer_event_handlers)
     else
-      @designer = new FSMDesigner(canvas, text_field,  window, @designer_event_handlers)
+      @designer = new FSMDesigner(@canvas, @text_field, @input_stats, window, @designer_event_handlers)
 
   #
   # Handles redraw events. Redraws are queued periodically,

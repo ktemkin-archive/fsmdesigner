@@ -59,13 +59,25 @@ class exports.LogicEquation
   #
   # Initializes a new LogicEquation object.
   #
-  constructor: (@expression) ->
+  constructor: (@raw) ->
 
     #Parse the Logic Equation using PEG.js.
-    [command, @output, @parse_tree] = Parser.parse(@expression)
+    [command, @output, @parse_tree] = Parser.parse(@raw)
 
     #Extract all of the input names from the given parse tree.
     @read_input_names_from(@parse_tree)
+
+
+  #
+  # Factory method which creates a new LogicEquation object from an
+  # expression (as opposed to an equation).
+  #
+  @from_expression: (expression, output_name = 'output') ->
+
+    #TODO: Find a more elegant way of doing this that's less coupled to
+    #the internal grammar?
+    new LogicEquation("#{output_name} = #{expression}")
+
 
 
   #
@@ -122,8 +134,6 @@ class exports.LogicEquation
     else
       return expression
     
-
-
 
   #
   # Evaluates the equation, and determines the value of its output

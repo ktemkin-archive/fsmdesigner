@@ -39,11 +39,12 @@ window.onload = ->
 
   # Get the canvas on which the designer will be rendered,
   # and the text field which will be used for user input.
-  canvas     = document.getElementById('canvas')
-  text_field = document.getElementById('text_field')
-  toolbar    = document.getElementById('toolbar')
-  file_form  = document.getElementById('staging')
+  canvas      = document.getElementById('canvas')
+  text_field  = document.getElementById('text_field')
+  input_stats = document.getElementById('input_stats')
+  toolbar     = document.getElementById('toolbar')
+  file_form   = document.getElementById('staging')
 
-  window.app = new FSMDesignerApplication(canvas, text_field, toolbar, file_form)
+  window.app  = new FSMDesignerApplication(canvas, text_field, input_stats, toolbar, file_form)
   app.run()
   

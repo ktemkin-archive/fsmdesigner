@@ -44,6 +44,8 @@
 {TransitionPlaceholder}        = require 'lib/transitions/transition_placeholder'
 {InvalidTransitionPlaceholder} = require 'lib/transitions/invalid_transition_placeholder'
 
+{VHDLExporter}                 = require 'lib/exporters/vhdl'
+
 
 #
 # Core FSMDesigner class.
@@ -87,6 +89,9 @@ class exports.FSMDesigner
   #Stores the next available "State ID", which will be passed to the given object.
   next_state_id: 0
 
+  #Specifies the duration after which the canvas should be redrawn.
+  heartbeat_interval: 500
+
   #
   # Default values for the supported events.
   #
@@ -102,7 +107,7 @@ class exports.FSMDesigner
   # container: The element that contains the canvas, and which accepts keypress, keydown, and keyup events.
   # events: An object containing callback event handlers. Currently only supports trigger on redraw.
   #
-  constructor: (@canvas, @text_field, container=window, events={}, @default_renderer=null) ->
+  constructor: (@canvas, @text_field, @input_stats=null, container=window, events={}, @default_renderer=null) ->
 
     # Set up the events which drive the designer's UI.
     @initialize_events(container, events)
@@ -189,9 +194,9 @@ class exports.FSMDesigner
   # serialized: The serialized string from which the FSMDesigner should be created.
   # canvas: A HTMLCanvasElement which the FSM designer will use as a user interface.
   #
-  @unserialize: (serialized, text_field, canvas, container=window, event_handlers={}) ->
+  @unserialize: (serialized, text_field,  canvas, input_stats=null, container=window, event_handlers={}) ->
     #Create a new FSMDesigner, and apply the serialized state.
-    designer = new FSMDesigner(canvas, text_field, container, event_handlers) 
+    designer = new FSMDesigner(canvas, text_field, input_stats, container, event_handlers) 
     designer.unserialize(serialized)
     return designer
 
@@ -214,11 +219,11 @@ class exports.FSMDesigner
   # json_object: An object which encapsulates the state of the desired FSMDesigner.
   # canvas: A HTMLCanvasElement which the FSM designer will use as a user interface.
   #
-  @from_json: (json_object, canvas, container=window, event_handlers={}, default_renderer=null) ->
+  @from_json: (json_object, canvas, input_stats=null, container=window, event_handlers={}, default_renderer=null) ->
 
     #create a new FSMDesigner object
     #and replace its contents with a recreated copy of the 
-    designer = new FSMDesigner(canvas, text_field, container, event_handlers, default_renderer)
+    designer = new FSMDesigner(canvas, text_field, input_stats, container, event_handlers, default_renderer)
     designer.replace_with_json_object(json_object)
 
     #return the newly created copy
@@ -464,7 +469,7 @@ class exports.FSMDesigner
 
     # If the canvas is currently a drag target, render it with a darker background.
     renderer.fill(@drag_color) if @drag_target
-    
+
     # Trigger the post-redraw event.
     @events.redraw(@)
 
@@ -495,12 +500,12 @@ class exports.FSMDesigner
 
     # Otherwise, reset the color to its default. 
     # Here, deleting the relevant transition delegates back to
-    # the prototypal object.
+    # the prototypal object. 
     else
       delete reset_transition.fg_color
-
-  #
-  # Exports the currently designed FSM to a PNG image.
+                             
+  #                          
+  # Exports the currently de signed FSM to a PNG image.
   # TODO: Create PNG renderer? Export me to the canvas renderer?
   #
   export_png: ->
@@ -784,11 +789,11 @@ class exports.FSMDesigner
 
       #and that transition is a placeholder, convert it to a normal transition
       if not (@current_transition instanceof TransitionPlaceholder)
-
-        #save an undo point
+                                                            
+        #save an undo point                                 
         @save_undo_step()
-  
-        # Select the newly-created transition,
+                                                            
+        # Select the newly-created transition,              
         # and add it to the FSM.
         @select_object(@current_transition)
         @transitions.push(@current_transition)
@@ -802,10 +807,21 @@ class exports.FSMDesigner
   # Handles a change in the current editor.
   #
   handle_editor_change: (e) ->
-    @selected?.handle_editor_change?(text_field.value)
+    @selected?.handle_editor_change?(@text_field.value)
+    @update_editor_statistics()
     @draw()
 
+
     #TODO FIXME ADD UNDO
+ 
+
+  #
+  # Displays the "vital statitics" for the currently 
+  # displayed editor field.
+  #
+  update_editor_statistics: ->
+    summary = @selected?.get_editor_summary?()
+    @input_stats?.innerHTML = summary || ''
 
   #
   # Handles a key-down in the current editor.
@@ -836,7 +852,7 @@ class exports.FSMDesigner
   #
   handle_heartbeat: =>
     @draw()
-
+  
   
   #
   # Changes the currently selected object to the given object.
@@ -882,6 +898,13 @@ class exports.FSMDesigner
     @text_field.style.display = "block"
     @text_field.style.opacity = 1
 
+    #Show the related statsistics, if they're there.
+    @input_stats?.style.display = "block"
+    @input_stats?.style.opacity = 1
+
+    #Show the most recent statistics for the given editor.
+    @update_editor_statistics()
+
     #And give the editor focus.
     if focus
       @schedule_text_event( => @text_field.focus())
@@ -894,8 +917,9 @@ class exports.FSMDesigner
     
     #Fade the text editor out...
     @text_field.style.opacity = 0
-    @schedule_text_event( => @text_field.style.display = "none")
-    
+    @input_stats?.style.opacity = 0
+    @schedule_text_event( => @text_field.style.display = "none" && @input_stats?.style.display = "none")
+
     #And ensure it loses focus.
     @text_field.blur()
 
@@ -1173,7 +1197,52 @@ class exports.FSMDesigner
   # Returns a list of all known outputs for the FSM being designed.
   #
   outputs: ->
-    [].concat((state.output_names() for state in @states)...)
+
+    #Fetch an array of all output names for each of the given states...
+    outputs = (state.output_names() for state in @states)
+
+    #And flatten the array.
+    @constructor.flatten_and_remove_duplicates(outputs)
+
+
+  #
+  # Returns a list of all known outputs for the FSM being designed.
+  #
+  inputs: ->
+
+    #Fetch an array of all output names for each of the given states...
+    inputs = (transition.input_names() for transition in @transitions)
+
+    #And flatten the array.
+    @constructor.flatten_and_remove_duplicates(inputs)
+
+
+
+
+  #
+  # Converts the current Finite State Machine to a VHDL design, if possible.
+  #
+  to_VHDL: (name = 'fsm') ->
+    generator = new VHDLExporter(@, name)
+    generator.render()
+
+
+  #
+  # Flattes
+  #
+  @flatten_and_remove_duplicates: (array) ->
+   
+    #Flatten the given array...
+    array = [].concat(array...)
+
+    #And find only the unique elements. 
+    result = []
+    for element in array
+      result.push(element) if element not in result
+
+
+    result
+
 
 
   #
@@ -1181,6 +1250,21 @@ class exports.FSMDesigner
   #
   @states_equivalent: (a, b) ->
     JSON.stringify(a) == JSON.stringify(b)
+
+  #
+  # Quick "getter" function that should return the current state objects.
+  #
+  get_states: ->
+    @states
+
+
+  #
+  # Returns all transitions leaving a given state.
+  #
+  transitions_leaving_state: (state)  ->
+    (t for t in @transitions when t.leaves_from(state))
+
+
 
 
 

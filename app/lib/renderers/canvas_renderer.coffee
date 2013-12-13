@@ -65,11 +65,8 @@ class exports.CanvasRenderer extends FSMRenderer
     @context.translate(0.5, 0.5)
 
 
-  #
-  # Fills the canvas with the relevant color.
-  # 
   fill: (style) ->
-    @context.fillStyle = style
+    @context.fillStyle = color
     @context.fillRect(0, 0, @canvas.width, @canvas.height)
 
   

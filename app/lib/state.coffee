@@ -365,14 +365,29 @@ class exports.State
   #
   # Returns a parsed list of all output expressions.
   #
-  output_expressions: ->
-    new LogicEquation(equation) for equation in @outputs.split(' ')
+  output_equations: ->
+    outputs = @outputs.replace(/,/g, ' ')
+    new LogicEquation(equation) for equation in outputs.split(/\s+/)
 
   #
   # Returns a list of all output names provided by the current state.
   #
   output_names: ->
-    expression.output for expression in @output_expressions()
+    expression.output for expression in @output_equations()
+
+
+  #
+  # Returns a summary of the values currently being edited.
+  #
+  get_editor_summary: ->
+    try
+      "Outputs are: #{@output_names().join(', ')}"
+    catch syntax_error
+      if @in_output_mode 
+        syntax_error
+      else
+        "On this state's output: #{syntax_error}"
+
 
 
       

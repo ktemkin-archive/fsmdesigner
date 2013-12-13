@@ -152,3 +152,11 @@ class exports.ResetTransition extends Transition
     new StraightPath(start, end)
 
 
+  #
+  # Generates a summary to be displayed below an editor.
+  #
+  get_editor_summary: ->
+    "This is a reset transition. You can add a comment, <br/>but its input will always be called <b>reset</b>."
+
+
+
