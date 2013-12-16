@@ -130,7 +130,7 @@ class exports.CurvedPath
   # Renders the given transition as a curved line across
   # the provided path.
   #
-  draw: (renderer, text=null, font=null, is_selected=false) ->
+  draw: (renderer, text=null, font=null, is_selected=false, text_background_color=null) ->
 
     #draw the core arc that makes up the transition line
     renderer.context.beginPath()
@@ -143,12 +143,28 @@ class exports.CurvedPath
     #draw the transition condition text
     return unless text? or is_selected
   
+    #Renders the transition's text.
+    @_render_text(renderer, text, font, is_selected, text_background_color)
+
+  #
+  # Re-render's the given state's text.
+  #
+  retouch_text: (renderer, text=null, font=null, is_selected=false, text_background_color=null) ->
+    @_render_text(renderer, text, font, is_selected, text_background_color)
+
+
+  #
+  # Renders the text for a curved path.
+  #
+  _render_text: (renderer, text, font=null, is_selected=false, text_background_color=null) ->
+
     #if the end-angle is less than the start angle, add 360 degrees 
     end_angle =
       if @end.angle < @start.angle
         @end.angle + Math.PI * 2
       else
         @end.angle
+
 
     #compute the angle at which the text should be rendered, relative to the line
     text_angle = (@start.angle + end_angle) / 2 + (@reversed * Math.PI)
@@ -160,7 +176,8 @@ class exports.CurvedPath
       angle: text_angle
 
     #finally, draw the text
-    renderer.draw_text(text, text_location.x, text_location.y, is_selected, font, text_location.angle)
+    renderer.draw_text(text, text_location.x, text_location.y, is_selected, font, text_location.angle, text_background_color)
+
 
   #
   # Compute the angle for the arrowhead at the end of this path.

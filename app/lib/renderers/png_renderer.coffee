@@ -33,18 +33,24 @@
  OTHER DEALINGS IN THE SOFTWARE.
 ###
 
-#
-# Generic (abstract) class which renders FSM diagrams.
-#
-class exports.FSMRenderer
+{CanvasRenderer}   = require 'lib/renderers/canvas_renderer'
 
-  convert_latex_shorthand: (text) ->
-    text #FIXME TODO #FIXME
+#
+# Renderer which creates HTML5 canvas representations of FSM diagrams.
+# This is the primary UI for entering FSM diagrams.
+#
+class exports.PNGRenderer extends CanvasRenderer
 
   #
-  # Returns true iff the given renderer supports text retouching.
+  # Returns a good background color for text which is being rendered directly on the canvas.
   #
-  supports_text_retouching: ->
-    true
+  get_text_background_color: ->
+    'rgba(255, 255, 255, 0.8)' #TODO: Support colors other than white?
 
+
+  #
+  # Returns a Data URI that can be used to view the resultant image.
+  #
+  to_data_URI: ->
+    @canvas.toDataURL('image/png')
 

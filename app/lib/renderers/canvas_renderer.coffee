@@ -45,6 +45,8 @@ class exports.CanvasRenderer extends FSMRenderer
   caret_height: 20
   caret_padding: 2
 
+  text_background_padding: 2
+
   #
   # Initializes a new CanvasRenderer object.
   #
@@ -52,6 +54,7 @@ class exports.CanvasRenderer extends FSMRenderer
 
     #Get the Canvas's 2D drawing context.
     @context = @canvas.getContext('2d')
+
 
 
   #
@@ -65,6 +68,9 @@ class exports.CanvasRenderer extends FSMRenderer
     @context.translate(0.5, 0.5)
 
 
+  #
+  # Fills the entire canvas with the given style.
+  #
   fill: (style) ->
     @context.fillStyle = color
     @context.fillRect(0, 0, @canvas.width, @canvas.height)
@@ -82,7 +88,40 @@ class exports.CanvasRenderer extends FSMRenderer
       @context.font = font
 
       #ask the rendering engine to compute the text's width, given the font
-      {width} = @context.measureText(text, font)
+      {x, y, width, height} = @_get_text_metrics(text, position, font, angle)
+
+      #render the text
+      @context.fillText(text, x, y + 6)
+
+      #if this is the selected object, and this an odd
+      #numbered half-second, render the caret
+      #(and turn three times widdershins)
+      display_caret = Math.ceil(new Date() / 500) % 2
+      if selected and display_caret
+
+        #draw the caret
+        @context.beginPath()
+        @context.moveTo(x + width + @caret_padding, y - @caret_height / 2)
+        @context.lineTo(x + width + @caret_padding, y + @caret_height / 2)
+        @context.stroke()
+
+
+  #
+  # Returns an object containing each of the relevant sizing metrics
+  # for the given piece of text.
+  #
+  _get_text_metrics: (text, position, font, angle=null) ->
+
+      #Apply the correct font, so our font sizes are estimated correctly.
+      original_font = @context.font
+      @context.font = font
+
+      #ask the rendering engine to compute the text's width, given the font
+      {width} = @context.measureText(text)
+
+      # Restore the original font.
+      @context.font = original_font
+
 
       # Compute the X and Y coordintates of the text.
       x = position.x - width / 2
@@ -103,30 +142,47 @@ class exports.CanvasRenderer extends FSMRenderer
       x = Math.round(x)
       y = Math.round(y)
 
-      #render the text
-      @context.fillText(text, x, y + 6)
-
-      #if this is the selected object, and this an odd
-      #numbered half-second, render the caret
-      #(and turn three times widdershins)
-      display_caret = Math.ceil(new Date() / 500) % 2
-      if selected and display_caret
-
-        #draw the caret
-        @context.beginPath()
-        @context.moveTo(x + width + @caret_padding, y - @caret_height / 2)
-        @context.lineTo(x + width + @caret_padding, y + @caret_height / 2)
-        @context.stroke()
+      #Return the set of font metrics.
+      metrics =
+        x: x
+        y: y
+        width: width
+        height: 16 #TODO FIXME TODO: Pull me from the canvas font!
 
 
   #
   # Renders a string of text on the given canvas.
   #
-  draw_text: (text, x, y, is_selected, font, angle=null) ->
+  draw_text: (text, x, y, is_selected, font, angle=null, background=null, background_height=16) ->
+
+    #Create the text's position.
+    #TODO: Remove the x/y format?
     position =
       x: x
       y: y
+
+    {x, y, width, height} = @_get_text_metrics(text, position, font, angle)
+
+    #If a background color has been provided, render a
+    #background box.
+    if background
+      original_style = @context.fillStyle
+      @context.fillStyle = @get_text_background_color()
+      @context.fillRect(x - @text_background_padding, y - 6 - @text_background_padding, width + @text_background_padding, height + @text_background_padding)
+      @context.fillStyle = original_style
+
+    #Then, render the text itself.
     @render_text(text, position, is_selected, font, angle)
+
+  #
+  # Returns a good background color for text which is being rendered directly on the canvas.
+  #
+  # suggestion: A suggestion used 
+  #
+  get_text_background_color: ->
+    'rgba(240, 240, 240, 0.8)' #TODO: extract from canvas
+
+
 
   #
   # Draws an arrow using the active color

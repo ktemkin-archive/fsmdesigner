@@ -79,11 +79,7 @@ class exports.StraightPath
     return percent > 0 and percent < 1 and Math.abs(distance) < tolerance
 
 
-  #
-  # Renders the given transition as a straight line across
-  # the provided path.
-  #
-  draw: (renderer, text = null, font = null, is_selected = false) ->
+
   #
   # Returns true iff the given point is within the specified tolerance of the path.
   #
@@ -113,7 +109,7 @@ class exports.StraightPath
   # Renders the given transition as a straight line across
   # the provided path.
   #
-  draw: (renderer, text = null, font = null, is_selected = false) ->
+  draw: (renderer, text = null, font = null, is_selected = false, text_background_color=null) ->
 
     #draw the basic straight line
     renderer.context.beginPath()
@@ -127,14 +123,29 @@ class exports.StraightPath
     #If no text was provided, return.
     return unless text? or is_selected
 
+    #render the transition's text
+    @_render_text(renderer, text, font, is_selected, text_background_color)
+
+
+  #
+  # Re-draw the text for the given arc.
+  #
+  retouch_text: (renderer, text = null, font = null, is_selected = false, text_background_color = null) ->
+    @_render_text(renderer, text, font, is_selected, text_background_color)
+
+
+  #
+  # Renders text along the given path.
+  #
+  _render_text: (renderer, text = null, font = null, is_selected = false, text_background_color = null) ->
+
     #compute the position of the arrow's transition condition
     text_location =
       x: (@start.x + @end.x) / 2
       y: (@start.y + @end.y) / 2
       angle: Math.atan2(@end.x - @start.x, @start.y - @end.y)
 
-    #and render the text
-    renderer.draw_text(text, text_location.x, text_location.y, is_selected, font, text_location.angle)
+    renderer.draw_text(text, text_location.x, text_location.y, is_selected, font, text_location.angle, text_background_color)
 
   #
   # Compute the angle for the arrowhead at the end of this path.

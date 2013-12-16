@@ -56,6 +56,10 @@ class exports.Transition
   fg_color: 'black'
   selected_color: 'blue'
 
+  # Color that will be applied to malformed or probably-invalid transitions.
+  # TODO: Abstract away!
+  invalid_color: '#992E33'
+
   #
   # Initializes a new Transition object.
   #
@@ -200,13 +204,19 @@ class exports.Transition
   #
   apply_transition_color: (renderer) =>
 
-    #if the arc is selected, apply the selected color
+    #If the arc is selected, apply the selected color
     if @selected
-      renderer.context.fillStyle = renderer.context.strokeStyle = @selected_color
+      color = @selected_color
+
+    #If the arc is invalid, use the invalid color.
+    else if @is_invalid()
+      color = @invalid_color
 
     #otherwise, apply the foreground color
     else
-      renderer.context.fillStyle = renderer.context.strokeStyle = @fg_color
+      color = @fg_color
+
+    renderer.context.fillStyle = renderer.context.strokeStyle = color
 
   #
   # Returns true iff the transition is connected to the given state.
@@ -246,6 +256,15 @@ class exports.Transition
     #get a path object that represent the path of this transtion, 
     #and request that it draw itself
     @get_path().draw(renderer, @condition, @font, @selected)
+
+
+  #
+  # Retouches the text on the given transition after a full draw.
+  #
+  retouch_text: (renderer) ->
+    @apply_transition_color(renderer)
+    @get_path().retouch_text?(renderer, @condition, @font, @selected, true)
+
   
   #
   # Returns true iff the two endpoints of this transition are overlapping.
@@ -482,6 +501,7 @@ class exports.Transition
   # Returns a list of all output names provided by the current state.
   #
   input_names: ->
+    return [] if @is_unconditional_transition()
     @expression().inputs
 
  
@@ -505,5 +525,22 @@ class exports.Transition
       "Inputs are: #{@input_names().join(", ")}<br/>Interpreting as: #{LogicEquation.from_expression(@condition).to_VHDL_expression()}"
     catch syntax_error
       syntax_error
+
+
+  #
+  # Returns true iff the given transition is invalid (e.g. has an invalid condition).
+  #
+  is_invalid: ->
+
+    #Unconditional transitions are never invalid.
+    return false if @is_unconditional_transition()
+
+    #Otherwise, try parsing the given transition.
+    try
+      LogicEquation.from_expression(@condition)
+      false
+    catch syntax_error
+      true
+
 
 

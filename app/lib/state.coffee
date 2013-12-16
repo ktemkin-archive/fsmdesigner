@@ -42,6 +42,10 @@
 #
 class exports.State
 
+  # Color that will be applied to malformed or probably-invalid transitions.
+  # TODO: Abstract away!
+  invalid_color: '#992E33'
+
   #
   # Initializes a new state object.
   #
@@ -57,6 +61,7 @@ class exports.State
     @fg_color = 'black'
     @bg_color = 'white'
     @selected_color = 'blue'
+
 
     # Node font, as accepted by CSS.
     @font = '16px "Inconsolata", sans-serif'
@@ -261,10 +266,27 @@ class exports.State
     renderer.render_text(@name, @position, @selected and not @in_output_mode, @font)
 
     #draw the state's moore outputs
+    @render_moore_outputs(renderer)
+
+
+  #
+  # Retouches the output text, ensuring that it's readable even when transitions cross over it.
+  #
+  retouch_text: (renderer) ->
+    @render_moore_outputs(renderer, true)
+
+
+  #
+  # Renders the state's moore output text.
+  #
+  render_moore_outputs: (renderer, background=false) ->
+    #draw the state's moore outputs
     renderer.context.fillStyle = @get_fg_color(true)
-    renderer.context.strokeStyle = renderer.context.fillStyle;
+    renderer.context.strokeStyle = renderer.context.fillStyle
     output_y = @position.y + @radius + @output_padding
-    renderer.draw_text(@outputs, @position.x, output_y, @selected and @in_output_mode, @output_font)
+
+    #Render the text itself.
+    renderer.draw_text(@outputs, @position.x, output_y, @selected and @in_output_mode, @output_font, null, background)
 
 
   #
@@ -277,13 +299,16 @@ class exports.State
     if @selected and @in_output_mode and is_output
         @selected_color
 
+    else if is_output and @output_is_invalid()
+        @invalid_color
+
     #if we're in selected, and in output mode, but this isn't and output, used the normal FG color
     else if @selected and @in_output_mode
         @fg_color
 
     #if this is selected, and isn't an output, and we're not in output mode, use the selected color
     else if @selected and not is_output
-        @selected_color 
+        @selected_color
 
     #otherwise, use the normal FG color
     else
@@ -366,6 +391,11 @@ class exports.State
   # Returns a parsed list of all output expressions.
   #
   output_equations: ->
+
+    #If this state has no outputs, return an empty set of output equations.
+    return [] if @outputs.trim() == ""
+
+    #Otherwise, attempt to parse the output string.
     outputs = @outputs.replace(/,/g, ' ')
     new LogicEquation(equation) for equation in outputs.split(/\s+/)
 
@@ -387,6 +417,17 @@ class exports.State
         syntax_error
       else
         "On this state's output: #{syntax_error}"
+
+
+  #
+  # Returns true iff the given state has an invalid output.
+  #
+  output_is_invalid: ->
+    try
+      @output_equations()
+      false
+    catch syntax_error
+      true
 
 
 

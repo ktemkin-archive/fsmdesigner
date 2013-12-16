@@ -45,7 +45,10 @@ class exports.ResetTransition extends Transition
   # Use a different foreground color for reset transitions, so the difference is visible.
   fg_color: '#30556B'
   selected_color: 'blue'
- 
+
+  #By default, assume that edges aren't invalid.
+  invalid: false
+
   #
   # Creates a new reset-transition.
   #
@@ -108,7 +111,8 @@ class exports.ResetTransition extends Transition
   #
   # A reset node has only one endpoint, which cannot overlap with itself.
   #
-  endpoints_are_overlapping: -> false
+  endpoints_are_overlapping: ->
+    false
 
   #
   # Anchors the transition at the given point.
@@ -129,6 +133,14 @@ class exports.ResetTransition extends Transition
   #
   move_with_offset: (point) ->
     @move_to(point)
+
+
+  #
+  # Renders the given transition, using the provided context.
+  #
+  draw: (renderer) ->
+    super renderer
+
 
   #
   # Returns a path object that 
@@ -156,7 +168,27 @@ class exports.ResetTransition extends Transition
   # Generates a summary to be displayed below an editor.
   #
   get_editor_summary: ->
-    "This is a reset transition. You can add a comment, <br/>but its input will always be called <b>reset</b>."
+    if @is_invalid()
+      "This is a <b>reset arc</b>, though its position makes it look like a regular arc.<br/>" +
+      "If this isn't what you wanted, you can delete it and try placing it again.<br/>" +
+        "If this <i>is</i> what you wanted, it's recommended that you move its start."
+    else
+      "This is a reset transition. You can add a comment, <br/>but its input will always be called <b>reset</b>."
+
+
+  #
+  # Returns true iff the given reset transition is invalid.
+  # TODO: Remove the necessity for the external "validation"?
+  #
+  is_invalid: ->
+    @invalid
+
+  #
+  # Returns a list of all inputs to the reset transition.
+  # For now, reset transitions are handled with a standardized "system reset".
+  #
+  input_names: ->
+    []
 
 
 

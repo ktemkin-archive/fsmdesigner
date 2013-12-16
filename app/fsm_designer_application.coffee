@@ -49,6 +49,7 @@ class exports.FSMDesignerApplication
     @designer_event_handlers =
       redraw: @handle_redraw
       resize: @handle_resize
+      name_changed: @handle_name_change
 
     # Sets up the local toolbar events.
     @set_up_toolbar()
@@ -76,15 +77,20 @@ class exports.FSMDesignerApplication
       'btnOpen':        @handle_open_click
       'btnSaveHTML5':   @handle_save_html5_click
       'btnSavePNG':     @handle_save_png_click
+      'btnVHDLHTML5':   @handle_vhdl_export_html5_click
       'btnHelp':        @handle_help_click
       'btnDismissHelp': @handle_dismiss_help_click
 
     # Add each of the button handlers to their respective buttons.
     for id, handler of button_handlers
       document.getElementById(id).addEventListener('click', handler)
+
+    # Listen for changes to the design name.
+    document.getElementById('designName').addEventListener('change', @handle_name_field_change)
   
-    # Create the flash-based download button, if Flash is supported.
+    # Create the flash-based download buttons, if Flash is supported.
     @set_up_download_button()
+    @set_up_vhdl_export_button()
 
 
   #
@@ -92,9 +98,49 @@ class exports.FSMDesignerApplication
   # (The HTML5 download API doesn't allow a save dialog.)
   # 
   set_up_download_button: ->
+    @_replace_button_with_downloadify('btnSaveHTML5', 'btnSave', => @designer.serialize())
+
+
+  #
+  # Set up a better VHDL export experience, on systems that support Flash.
+  # (The HTML5 download API doesn't allow a save dialog.)
+  # 
+  set_up_vhdl_export_button: ->
+    
+    #Replace the core VHDL export button... 
+    @_replace_button_with_downloadify('btnVHDLHTML5', 'btnVHDL', (=> @designer.to_VHDL(@get_design_filename())), 'vhd')
+
+    #Add events on mouse-in and mouse-out, which will show and hide the error bar.
+    export_area = document.getElementById('btnVHDL')
+    export_area.addEventListener('mouseover', => @show_error_bar(@designer.error_message())) #TODO: Provide error message!
+    export_area.addEventListener('mouseout', => @show_error_bar(false))
+
+  
+  #
+  # Shows (or hides) the error bar.
+  #
+  # message: If a valid string message is provided, it will be displayed on the error bar;
+  #          if the message is falsey, the error bar will be hidden.
+  #
+  show_error_bar: (message) ->
+
+    #If we have a message to apply, apply it.
+    if message
+      document.getElementById('error_message').innerHTML = message 
+
+    #Show or hide the error bar, as appropriate.
+    error_bar = document.getElementById('error_bar')
+    @set_element_opacity(error_bar, if message then 1 else 0)
+
+
+  #
+  # Replaces a given HTML5 download button with a Downloadify instance.
+  # This allows for more dynamic saving using Flash's save dialog.
+  #
+  _replace_button_with_downloadify: (element_to_replace, target_element, generator_function, extension='fsmd')->
 
     #Get a reference to the HTML5 save button we want to replace.
-    download_button = document.getElementById('btnSaveHTML5')
+    download_button = document.getElementById(element_to_replace)
 
     # If supported, create a better download button using Downloadify.
     downloadify_options = 
@@ -104,9 +150,44 @@ class exports.FSMDesignerApplication
       height: download_button.offsetHeight
       append: true
       transparent: true
-      filename: 'FiniteStateMachine.fsmd'
-      data: => @designer.serialize()
-    Downloadify.create('btnSave', downloadify_options)
+      filename: => "#{@get_design_filename()}.#{extension}"
+      data: => generator_function()
+    Downloadify.create(target_element, downloadify_options)
+
+
+  #
+  # Returns the active design's name.
+  #
+  get_design_name: ->
+    @designer.get_name()
+
+
+  #
+  # Sets the active design's name, both in terms of the UI and the FSMDesigner.
+  #
+  set_design_name: (name) =>
+
+    #Set the designer name field...
+    @_set_design_name_field(name)
+
+    #...and pass the new name to the designer.
+    @designer.set_name(name)
+
+
+  #
+  # Internal method to set the "design name" field's value.
+  #
+  _set_design_name_field: (name) ->
+    document.getElementById('designName').value = name
+
+
+  #
+  # Returns an appropriate filename for the active design.
+  # TODO: Handle completely invalid names.
+  #
+  get_design_filename: =>
+    @get_design_name().replace(/\s/g, '_').replace(/[^A-Za-z0-9_]/g, '')
+
 
   #
   # Show the help panel.
@@ -133,7 +214,8 @@ class exports.FSMDesignerApplication
     if last_design?
       @designer = FSMDesigner.unserialize(last_design, @text_field, @canvas, @input_stats, window, @designer_event_handlers)
     else
-      @designer = new FSMDesigner(@canvas, @text_field, @input_stats, window, @designer_event_handlers)
+      @designer = new FSMDesigner(@canvas, @text_field, @input_stats, window, @designer_event_handlers, null, @get_design_name())
+
 
   #
   # Handles redraw events. Redraws are queued periodically,
@@ -151,6 +233,10 @@ class exports.FSMDesignerApplication
     document.getElementById('btnUndo').disabled = not @designer.can_undo()
     document.getElementById('btnRedo').disabled = not @designer.can_redo()
 
+    # Ensure that the export button is only available for valid designs.
+    document.getElementById('btnVHDLHTML5').disabled = not @designer.is_valid()
+    @_add_or_remove_class(document.getElementById('btnVHDLHTML5'), 'nonempty', not @designer.empty())
+
 
   #
   # Handles resizing of the owning window.
@@ -165,7 +251,20 @@ class exports.FSMDesignerApplication
     canvas.style.width = canvas.width + 'px'
     canvas.style.height = canvas.height + 'px'
 
-  
+
+  #
+  # Handles a change in the FSMDesigner's name,
+  # ensuring that the FSMDesigner "design name" field is always up-to-date.
+  #
+  handle_name_change: (new_name) =>
+    @_set_design_name_field(new_name)
+
+  #
+  # Handles a change in "design name" text field.
+  #
+  handle_name_field_change: (e) =>
+    @designer.set_name(e.srcElement.value, false)
+
   #
   # Handles a click on the new button.
   #
@@ -192,18 +291,39 @@ class exports.FSMDesignerApplication
   # This method is not preferred, but will be used if Flash cannot be found.
   #
   handle_save_html5_click: =>
+    @_download_using_data_uri(@designer.serialize())
     
-    #get a serialization of the FSM's state, for saving
-    content = @designer.serialize()
-    
+
+
+
+  #
+  # Handles clicks of the "save to PNG" button.
+  #
+  handle_save_png_click: =>
+
+    #TODO: Abstract the "new window" behavior.
+    @designer.export_png()
+
+
+  #
+  # Handles the "export-to-VHDL" button; exports a VHDL file using a Data URI.
+  # This method is not preferred, but will be used if Flash cannot be found.
+  #
+  handle_vhdl_export_html5_click: =>
+    @_download_using_data_uri(@designer.to_VHDL(@get_design_filename()))
+
+
+  #
+  # Forces download of the given file's content using a Data URI.
+  #
+  _download_using_data_uri: (content) ->
+
     #convert it to a data URI
     uri_content = 'data:application/x-fsm,' + encodeURIComponent(content)
     
     #and ask the user's browser to download it
     document.location.href = uri_content
 
-  handle_save_png_click: =>
-    @designer.export_png()
 
 
   #
@@ -240,6 +360,20 @@ class exports.FSMDesignerApplication
 
     @schedule_ui_event =>
       element.style.display = if value > 0 then 'block' else 'none'
+
+  #
+  # Adds or removes the given class depending on whether the provided condition is true.
+  #
+  _add_or_remove_class: (element, class_name, condition) ->
+    if condition
+      
+      #Add the class, if it's not there already.
+      unless element.className.indexOf(class_name) > -1
+        element.className += " #{class_name} "
+
+    else
+      element.className = element.className.replace(" #{class_name} ", " ")
+      
 
   #
   # Handles cancellation of the file open dialog.

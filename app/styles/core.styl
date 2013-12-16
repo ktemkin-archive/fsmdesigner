@@ -1,3 +1,17 @@
+//TODO: DRY this up!
+opacity(n)
+  opacity n
+  filter unquote('progid:DXImageTransform.Microsoft.Alpha(Opacity=' + round(n * 100) + ')')
+
+fade(n)
+  webkit-transition: opacity n ease-in-out;
+  -moz-transition: opacity n ease-in-out;
+  -o-transition: opacity n ease-in-out;
+  -ms-transition: opacity n ease-in-out;
+  transition: opacity n ease-in-out;
+
+
+
 non-selectable()
   -webkit-user-select none
   -khtml-user-select none
@@ -33,6 +47,28 @@ body
   button
     font-family 'Droid Sans', sans-serif
     font-size 14px
+
+#error_bar
+  ui-framing()
+  non-selectable()
+  display none
+  box-sizing border-box
+  height 32px
+  width 100%
+  top 36px
+  left 0px
+  right 0px
+  padding 8px
+  padding-top 5px
+  z-index 1000
+  font-size 16px
+  vertical-align: middle 
+  background rgba(128, 38, 48, 0.77)
+  font-family 'Droid Sans', sans-serif
+  text-align center
+
+  fade 0.1s
+
 
 #toolbar button, #toolbar, #toolbar div
   non-selectable()
@@ -116,6 +152,8 @@ body
   color #333
   margin 3px
 
+#helpPanel li
+  line-height 20px
 
 a
   color black

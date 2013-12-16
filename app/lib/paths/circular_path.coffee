@@ -64,7 +64,7 @@ class exports.CircularPath
   #
   # Renders the given transition as a circle across the provided path.
   #
-  draw: (renderer, text=null, font=null, is_selected=false, show_caret=false) ->
+  draw: (renderer, text=null, font=null, is_selected=false, text_background_color=null) ->
 
     #Draw the core circle that makes up the transition line.
     renderer.context.beginPath()
@@ -77,11 +77,18 @@ class exports.CircularPath
     #If we don't have text to render, abort
     return unless text? or is_selected
 
+    #Render the arc's background text.
+    @_render_text(renderer, text, font, is_selected, text_background_color)
+
+
+ 
+   _render_text: (renderer, text, font=null, is_selected=false, text_background_color=null)->
+
     #Find the furthest point from the state...
     text_location =
       x: @circle.x + @circle.radius * Math.cos(@anchor_angle)
       y: @circle.y + @circle.radius * Math.sin(@anchor_angle)
 
     #... and render the text, there.
-    renderer.draw_text(text, text_location.x, text_location.y, is_selected, font, @anchor_angle)
+    renderer.draw_text(text, text_location.x, text_location.y, is_selected, font, @anchor_angle, text_background_color)
 

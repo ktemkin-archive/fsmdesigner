@@ -34,6 +34,7 @@
 
 {CrossBrowserUtils}            = require 'lib/cross_browser_utils'
 {CanvasRenderer}               = require 'lib/renderers/canvas_renderer'
+{PNGRenderer}                  = require 'lib/renderers/png_renderer'
 {LogicEquation}                = require 'lib/logic_equation'
 
 {State}                        = require 'lib/state'
@@ -69,19 +70,9 @@ class exports.FSMDesigner
   undo_history_size: 32
   
   original_click: null
-  heartbeat_time: 500
   selected: null
   current_transition: null
   moving_object: false
-
-  # Color that will be applied to malformed or probably-invalid transitions.
-  invalid_transition_color: '#AD0009'
-  
-  textEntryTimeout: null
-  textEnteredRecently: false
-  textUndoDelay: 2000
-
-  state_placeholder_text: 'State'
 
   # The color to display when a file is beging dragged over the canvas.
   drag_color: 'rgba(255, 255, 255, .8)'
@@ -92,12 +83,16 @@ class exports.FSMDesigner
   #Specifies the duration after which the canvas should be redrawn.
   heartbeat_interval: 500
 
+  #Specifies the default name for a finite state machine.
+  default_name: 'finite_state_machine'
+
   #
   # Default values for the supported events.
   #
   default_events:
     redraw: ->
     resize: ->
+    name_changed: ->
 
 
   #
@@ -107,7 +102,7 @@ class exports.FSMDesigner
   # container: The element that contains the canvas, and which accepts keypress, keydown, and keyup events.
   # events: An object containing callback event handlers. Currently only supports trigger on redraw.
   #
-  constructor: (@canvas, @text_field, @input_stats=null, container=window, events={}, @default_renderer=null) ->
+  constructor: (@canvas, @text_field, @input_stats=null, container=window, events={}, @default_renderer=null, @name = FSMDesigner::default_name) ->
 
     # Set up the events which drive the designer's UI.
     @initialize_events(container, events)
@@ -186,6 +181,20 @@ class exports.FSMDesigner
   _create_default_renderer: ->
     new CanvasRenderer(@canvas)
 
+  
+  #
+  # Getter for the FSMDesigner's design name.
+  # 
+  get_name: ->
+    @name
+
+
+  #
+  # Setter for the FSMDesigner's design name.
+  #
+  set_name: (@name, trigger_events = true) ->
+   @events.name_changed?(@name) if trigger_events
+
 
   #
   # Factory method which creates a new FSMDesigner from a JSON serialization,
@@ -242,11 +251,15 @@ class exports.FSMDesigner
     #Restore each of the states and transitions from the json object:
     @states = (State.from_json(s) for s in json_object.states)
     @transitions = (Transition.from_json(t, @find_state) for t in json_object.transitions)
+    @name = json_object.name
 
     #Re-assign all of the given state IDs, which:
     # - Prevents state IDs from growing out of bounds.
     # - Correctly re-determines the next_state_id parameter.
     @reassign_state_ids()
+
+    #Trigger the name-change event, as we've updated the state's name.
+    @events.name_changed?(@name)
 
     #Draw the newly-reconstructed state.
     @draw()
@@ -281,7 +294,7 @@ class exports.FSMDesigner
   #
   #Clears the entire canvas, starting a "new" FSM diagram.
   #
-  clear: (no_save) ->
+  clear: (no_save, trigger_events=true) ->
     
     # Unless instructed not to, save an undo step
     @save_undo_step() unless no_save
@@ -291,6 +304,8 @@ class exports.FSMDesigner
     @transitions = []
     @selected = null
     @current_target = null
+
+    @set_name(@default_name)
 
     # Clear any pending text events... 
     clearTimeout(@pending_text_event) if @pending_text_event?
@@ -372,6 +387,7 @@ class exports.FSMDesigner
     #re-draw the FSM, including the newly-created in-progress node
     @draw()
 
+
   #
   # Returns a value-based persistanble copy of the FSMDesigner's current state, for use
   # in creating portable persistant objects.
@@ -380,6 +396,8 @@ class exports.FSMDesigner
     designer_state =
       states: (s.to_json() for s in @states)
       transitions: (t.to_json() for t in @transitions)
+      name: @name
+
 
   #
   # Alias for toJSON with a more idiomatic name.
@@ -387,12 +405,14 @@ class exports.FSMDesigner
   to_json: ->
     @toJSON()
 
+
   #
   # Deletes the specified object.
   #
   delete: (obj) ->
     @delete_state obj
     @delete_transition obj
+
 
   #
   # Deletes the specified state from the FSM.
@@ -442,12 +462,13 @@ class exports.FSMDesigner
     #redraw, if appropriate
     @draw() unless no_redraw
 
+
   #
   # Draws the FSMDesigner instance using the provided renderer.
   # If no renderer is provided, utizlies the default renderer, which typically renders
   # to a HTML canvas.
   #
-  draw: (renderer=@default_renderer) ->
+  draw: (renderer=@default_renderer, retouch=true) ->
     @events.resize?(@canvas)
 
     #If the user has placed a reset condition, ensure it's valid.
@@ -459,6 +480,11 @@ class exports.FSMDesigner
     #draw each of the states and transitions in the FSM
     state.draw(renderer) for state in @states
     transition.draw(renderer) for transition in @transitions
+
+    #Re-touch the outputs, if applicable.
+    if renderer.supports_text_retouching() and retouch
+      state.retouch_text?(renderer) for state in @states
+      transition.retouch_text?(renderer) for transition in @transitions
 
     #if we have a selected object, redraw it, to ensure it winds up
     #on top
@@ -495,42 +521,30 @@ class exports.FSMDesigner
 
     # If we're overlapping a state, the 
     # Highlight it.
-    if @find_state_at_position(x, y, 10)?
-      reset_transition.fg_color = @invalid_transition_color
+    reset_transition.invalid = @find_state_at_position(x, y, 10)?
 
-    # Otherwise, reset the color to its default. 
-    # Here, deleting the relevant transition delegates back to
-    # the prototypal object. 
-    else
-      delete reset_transition.fg_color
                              
   #                          
   # Exports the currently de signed FSM to a PNG image.
-  # TODO: Create PNG renderer? Export me to the canvas renderer?
   #
   export_png: ->
+
+    png_renderer = new PNGRenderer(@canvas)
 
     #temporarily deselect the active element, so it doesn't show up as higlighted in
     #the exported copy
     @selected?.deselect?()
 
     #re-draw the FSM, and capture the resultant png
-    @draw()
-    png_data = canvas.toDataURL('image/png')
+    @draw(png_renderer)
 
     #send the image to be captured, in a new tab
-    window.open(png_data, '_blank')
+    window.open(png_renderer.to_data_URI(), '_blank')
     window.focus()
 
     #restore the original selection
     @selected?.select?()
     @draw()
-
-
-  #
-  # Converts the given Finite State Machine to VHDL.
-  #
-  to_VHDL: ->
 
 
 
@@ -1194,6 +1208,27 @@ class exports.FSMDesigner
 
 
   #
+  # Quick "getter" function that should return the current state objects.
+  #
+  get_states: ->
+    @states
+
+
+  #
+  # Returns true iff the given FSMDesigner has no created states.
+  #
+  empty: ->
+    @states.length == 0
+
+
+  #
+  # Returns all transitions leaving a given state.
+  #
+  transitions_leaving_state: (state)  ->
+    (t for t in @transitions when t.leaves_from(state))
+
+
+  #
   # Returns a list of all known outputs for the FSM being designed.
   #
   outputs: ->
@@ -1217,12 +1252,74 @@ class exports.FSMDesigner
     @constructor.flatten_and_remove_duplicates(inputs)
 
 
+  #
+  # Returns a string iff any of the I/O names are used for both an input
+  # and an output. (This form of FSM can't be exported, at the moment.)
+  #
+  # If there is overlap, the first overlapping element will be returned.
+  # If no overlap occurs, returns false.
+  #
+  inputs_and_outputs_overlap: ->
+    inputs  = @inputs()
+    outputs = @outputs()
+
+    for input in inputs
+      return input if input in outputs
+
+    return false
+
+
+
+  #
+  # Returns a value iff the given Finite State Machine is valid, to the best of
+  # the designer's knowledge. This indicates whether it can succesfully be
+  # exported (but not whether the deisgn can be saved.)
+  #
+  is_valid: =>
+    try
+      @inputs()
+      outputs = @outputs()
+
+      return false unless outputs.length > 0
+      return false if @inputs_and_outputs_overlap()
+
+      return true
+    catch syntax_error
+      return false
+
+
+  #
+  # Returns an HTML string containing the most relevant error message;
+  # or false if the Finite State Machine is valid.
+  #
+  error_message: =>
+    if @is_valid()
+      return false
+    else
+
+      return " You haven't designed a <strong>Finite State Machine</strong> yet!" if @empty()
+
+      #Try to determine if the Finite State Machine has no arcs. 
+      try
+        return " Your Finite State Machine has no <strong>outputs</strong>." if @outputs().length == 0
+
+      #If we run into an error enumerating outputs, we must have had an invalid output somewhere.
+      #Notify the user.
+      catch syntax_error
+        return " You'll need to fix the invalid <strong>outputs</strong> below before you can export this Finite State Machine."
+
+      overlap = @inputs_and_outputs_overlap()
+      return " The name <strong>#{overlap}</strong> can't be used for both an <u>input</u> and an <u>output</u>." if overlap
+
+      #If we don't have an invalid output, and the FSM _is_ invalid, then we must have an invalid arc.
+      return " You'll need to fix the invalid <strong>transition</strong> below before you can export this Finite State Machine."
 
 
   #
   # Converts the current Finite State Machine to a VHDL design, if possible.
   #
   to_VHDL: (name = 'fsm') ->
+    return false unless @is_valid()
     generator = new VHDLExporter(@, name)
     generator.render()
 
@@ -1238,33 +1335,15 @@ class exports.FSMDesigner
     #And find only the unique elements. 
     result = []
     for element in array
+      element = element.toLowerCase()
       result.push(element) if element not in result
 
 
     result
-
-
 
   #
   # Return true if two "undo" states represent the same value.
   #
   @states_equivalent: (a, b) ->
     JSON.stringify(a) == JSON.stringify(b)
-
-  #
-  # Quick "getter" function that should return the current state objects.
-  #
-  get_states: ->
-    @states
-
-
-  #
-  # Returns all transitions leaving a given state.
-  #
-  transitions_leaving_state: (state)  ->
-    (t for t in @transitions when t.leaves_from(state))
-
-
-
-
 
