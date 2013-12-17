@@ -130,10 +130,14 @@ class exports.LogicEquation
       #and return the result
       return operator(args...)
 
+    #Base case: if we have a literal, convert it to VHDL format.
+    else if expression == '1' or expression == '0' or expression == '-'
+      return "'#{expression}'"
+
     #Base case: if we can't evaluate the tree further, return it diretly.
     else
       return expression
-    
+
 
   #
   # Evaluates the equation, and determines the value of its output

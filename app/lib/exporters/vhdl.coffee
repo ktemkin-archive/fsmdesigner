@@ -68,9 +68,10 @@ class exports.VHDLExporter
   _render_entity: ->
     entity  = "entity #{@name} is port(\n"
     
-    entity += "  --Global signals; clock, reset:\n"
+    entity += "  --Global signals.\n"
     entity += "  clk : in std_ulogic;\n"
-    entity += "  reset : in std_ulogic;\n\n"
+    entity += "  reset : in std_ulogic;\n" if @designer.has_reset_transition()
+    entity += "\n"
 
     #Insert inputs, if applicable.
     if @designer.inputs()

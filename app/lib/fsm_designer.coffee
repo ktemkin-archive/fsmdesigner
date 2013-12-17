@@ -84,7 +84,7 @@ class exports.FSMDesigner
   heartbeat_interval: 500
 
   #Specifies the default name for a finite state machine.
-  default_name: 'finite_state_machine'
+  default_name: 'fsm'
 
   #
   # Default values for the supported events.

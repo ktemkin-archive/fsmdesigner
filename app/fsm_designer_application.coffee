@@ -404,7 +404,14 @@ class exports.FSMDesignerApplication
     clearTimeout(@active_ui_event) if @active_ui_event?
     setTimeout(event, timeout)
 
-  
+
+  #
+  # Attempts to clear the hidden file selection.
+  #
+  _clear_file_selection: ->
+    document.getElementById('fileOpen').value = ''
+
+
   #
   # Handle selection of a file in 
   # 
@@ -418,4 +425,7 @@ class exports.FSMDesignerApplication
 
     # Open the relevant file.
     @designer.load_from_file(e.target.files[0])
+
+    # Clear the internal file selector.
+    @_clear_file_selection()
 
